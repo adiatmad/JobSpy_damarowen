@@ -1,5 +1,6 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -11,51 +12,39 @@ st.set_page_config(page_title="Job Search Scraper", page_icon="🔎", layout="wi
 st.title("🔎 Job Search Scraper")
 st.caption(
     "Powered by python-jobspy-damarowen — searches LinkedIn, Indeed, ZipRecruiter, "
-    "Glassdoor, and Google. Keyword is optional — you can search by location and "
-    "recency alone."
+    "and Glassdoor. Keyword is optional — you can search by location and recency alone.\n\n"
+    "**Google is not scraped** — a manual search suggestion is provided instead (see sidebar)."
 )
 
-# JobStreet removed: this fork's JobStreet scraper is consistently blocked by
-# Cloudflare (WAF challenge page, HTTP 403) when run from Streamlit Community
-# Cloud's shared IPs — it never returns real results here, so keeping it in the
-# list just wastes a retry cycle and misleads users into thinking it's an option.
-ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor", "google"]
+# ----------------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------------
+ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]   # Google removed
 DEFAULT_SITES = ["indeed", "linkedin"]
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 3
 PER_SITE_TIMEOUT_SECONDS = 60
 
-# Substrings that indicate a permanent anti-bot block rather than a transient
-# network hiccup. Retrying against these wastes time — Cloudflare doesn't care
-# how many times you ask again in the next 3 seconds.
 PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
 
-
+# ----------------------------------------------------------------------
+# Helper functions (your existing logic, mostly unchanged)
+# ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
         return False
     lowered = error_msg.lower()
     return any(marker in lowered for marker in PERMANENT_BLOCK_MARKERS)
 
-
 def glassdoor_supports_country(country_str: str) -> bool:
-    """Ask the library itself whether Glassdoor has a domain for this country."""
-    if not country_str or not country_str.strip():
-        return False
     try:
         country = Country.from_string(country_str)
     except ValueError:
         return False
-    return len(country.value) == 3  # 3rd tuple element = Glassdoor domain
-
+    return len(country.value) == 3
 
 def build_google_search_term(search_term: str, location: str, hours_old: int) -> str:
-    """Build the query Google Jobs expects: '<keyword> jobs near <location> since <recency>'.
-
-    google_search_term is the ONLY param that actually filters Google Jobs results —
-    plain search_term is ignored by the Google scraper. This builds it whether or not
-    the user typed a keyword, matching the syntax Google's own search box expects.
-    """
+    """Build the query Google Jobs expects: '<keyword> jobs near <location> since <recency>'."""
     term = search_term.strip() if search_term and search_term.strip() else ""
     if not term:
         term = "jobs"
@@ -75,7 +64,6 @@ def build_google_search_term(search_term: str, location: str, hours_old: int) ->
 
     return term
 
-
 def build_kwargs_for_site(
     site: str, search_term: str, location: str, country_indeed: str,
     results_wanted: int, hours_old: int, is_remote: bool,
@@ -94,26 +82,15 @@ def build_kwargs_for_site(
     if is_remote:
         kwargs["is_remote"] = True
 
-    has_keyword = bool(search_term and search_term.strip())
+    # Google is not scraped, so we don't build kwargs for it here.
 
-    if site == "google":
-        # google_search_term is the only param that filters Google Jobs — build it
-        # whether or not the user typed a keyword.
-        kwargs["google_search_term"] = build_google_search_term(search_term, location, hours_old)
-    else:
-        if has_keyword:
-            kwargs["search_term"] = search_term.strip()
+    if search_term and search_term.strip():
+        kwargs["search_term"] = search_term.strip()
 
     return kwargs
 
-
 def scrape_one_site(site: str, **kwargs_inputs) -> tuple[pd.DataFrame | None, str | None]:
-    """Scrape a single site in isolation, with retries and a timeout. Never raises.
-
-    Retries only on transient failures (timeouts, network errors). A detected
-    permanent block (403 / cf-waf / Cloudflare challenge) exits immediately —
-    retrying that within seconds never succeeds and only slows the search down.
-    """
+    """Scrape a single site in isolation, with retries and a timeout."""
     last_error = None
     kwargs = build_kwargs_for_site(site, **kwargs_inputs)
 
@@ -128,22 +105,14 @@ def scrape_one_site(site: str, **kwargs_inputs) -> tuple[pd.DataFrame | None, st
         except Exception as e:
             last_error = str(e)
             if is_permanent_block(last_error):
-                break  # hard block — further attempts won't help
+                break
 
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_DELAY_SECONDS)
 
     return None, last_error
 
-
 def validate_jobs(jobs: pd.DataFrame, hours_old: int) -> pd.DataFrame:
-    """Drop rows that don't look like real, current postings.
-
-    Scrapers occasionally return rows with missing fields or dates outside the
-    requested window (some sites don't strictly enforce their own recency
-    filter). This re-checks the basics ourselves rather than trusting the raw
-    scrape as "valid" by default.
-    """
     if jobs.empty:
         return jobs
 
@@ -157,20 +126,12 @@ def validate_jobs(jobs: pd.DataFrame, hours_old: int) -> pd.DataFrame:
     if hours_old and hours_old > 0 and "date_posted" in jobs.columns:
         cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(hours=int(hours_old))
         parsed_dates = pd.to_datetime(jobs["date_posted"], errors="coerce")
-        # Only drop rows we can confidently parse as stale — don't punish rows
-        # where the site simply didn't supply a parseable date.
         stale_mask = parsed_dates.notna() & (parsed_dates < cutoff)
         jobs = jobs[~stale_mask]
 
     return jobs
 
-
 def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
-    """Catch the same posting appearing on multiple boards under different URLs.
-
-    The existing job_url dedup only catches exact-URL repeats within one run —
-    it misses e.g. the same listing showing up via both Indeed and Google Jobs.
-    """
     if jobs.empty:
         return jobs
     key_cols = [c for c in ("title", "company", "location") if c in jobs.columns]
@@ -183,7 +144,9 @@ def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
     jobs = jobs.drop_duplicates(subset="_dedupe_key").drop(columns="_dedupe_key")
     return jobs
 
-
+# ----------------------------------------------------------------------
+# Sidebar
+# ----------------------------------------------------------------------
 with st.sidebar:
     st.header("Search settings")
 
@@ -199,7 +162,7 @@ with st.sidebar:
         help="Leave blank to get all valid postings for the location and recency filters below.",
     )
 
-    st.caption("Job sites to search")
+    st.caption("Job sites to scrape")
     glassdoor_ok = glassdoor_supports_country(country_indeed)
     sites = []
     cols = st.columns(2)
@@ -225,6 +188,29 @@ with st.sidebar:
         "expected for other locations."
     )
 
+    # --- Google manual search section ---
+    st.divider()
+    st.subheader("🔍 Google Jobs (Manual)")
+    google_enabled = st.checkbox(
+        "Show Google search suggestion",
+        value=False,
+        help="We do not scrape Google due to blocking. This builds a query you can use manually."
+    )
+    if google_enabled:
+        # Build the query based on current inputs
+        google_query = build_google_search_term(search_term, location, hours_old)
+        st.code(google_query, language="text")
+        # Create a link that opens Google Jobs with that query
+        # Google Jobs URL format: https://www.google.com/search?q=<query>&ibp=htl;jobs
+        import urllib.parse
+        encoded_query = urllib.parse.quote(google_query)
+        google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
+        st.markdown(f"[🔗 Search on Google Jobs]({google_url})")
+        st.caption("Click the link to open Google Jobs in a new tab.")
+
+    st.divider()
+    # --- End Google section ---
+
     results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
     hours_old = st.number_input(
         "Only show jobs posted within (hours)",
@@ -235,11 +221,14 @@ with st.sidebar:
     )
     is_remote = st.checkbox("Remote jobs only", value=False)
 
-    search_clicked = st.button("Search jobs", type="primary", width="stretch")
+    search_clicked = st.button("Search jobs", type="primary", use_container_width=True)
 
+# ----------------------------------------------------------------------
+# Main logic when search is clicked
+# ----------------------------------------------------------------------
 if search_clicked:
     if not sites:
-        st.error("Pick at least one job site from the sidebar.")
+        st.error("Pick at least one job site from the sidebar (Google is not scraped).")
         st.stop()
 
     common_inputs = dict(
@@ -280,8 +269,8 @@ if search_clicked:
 
     if not all_dfs:
         st.warning(
-            "No jobs found from any site. Try a different location, fewer filters, "
-            "or check the per-site errors above."
+            "No jobs found from any scraped site. Try a different location, fewer filters, "
+            "or check the per-site errors above. (Google is not scraped.)"
         )
     else:
         jobs = pd.concat(all_dfs, ignore_index=True)
@@ -300,28 +289,65 @@ if search_clicked:
                 "loosening the filters."
             )
         else:
+            # --------------------------------------------------------------
+            # Add company career column
+            # --------------------------------------------------------------
+            # If company_url exists, use it; else create a fallback column
+            if "company_url" in jobs.columns:
+                # We'll keep it as is; we can also create a clickable link column
+                # But we want a column that is either the URL or a concat.
+                # We'll add a new column called "company_career"
+                jobs["company_career"] = jobs["company_url"].fillna("")
+                # For rows without company_url, set a fallback: company + title
+                mask = jobs["company_career"].str.strip().eq("") | jobs["company_career"].isna()
+                jobs.loc[mask, "company_career"] = jobs.loc[mask, "company"].astype(str) + " " + jobs.loc[mask, "title"].astype(str)
+            else:
+                # No company_url at all, just concatenate
+                jobs["company_career"] = jobs["company"].astype(str) + " " + jobs["title"].astype(str)
+
+            # Optionally, make it clickable if it looks like a URL
+            # We can display as plain text for simplicity.
+
             summary = f"Found {len(jobs)} valid jobs across {len(all_dfs)} site(s)"
             if filtered_count:
                 summary += f" — {filtered_count} filtered out as incomplete, stale, or duplicate"
             st.success(summary)
 
+            # Reorder columns to include the new one
             preferred_cols = [
                 "site", "title", "company", "location", "city", "state",
                 "job_type", "is_remote", "date_posted", "min_amount", "max_amount",
-                "currency", "job_url",
+                "currency", "job_url", "company_career"
             ]
             existing_preferred = [c for c in preferred_cols if c in jobs.columns]
             other_cols = [c for c in jobs.columns if c not in existing_preferred]
             jobs = jobs[existing_preferred + other_cols]
 
-            st.dataframe(jobs, width="stretch", hide_index=True)
+            st.dataframe(jobs, use_container_width=True, hide_index=True)
+
+            # ------------------------------------------------------------------
+            # CSV download with dynamic name
+            # ------------------------------------------------------------------
+            # Build filename: jobs_{search_term}_{location}_{YYYY-MMM-DD_HHMM}.csv
+            # Use location if provided, else "anywhere"
+            loc_part = location.strip().replace(" ", "_") if location and location.strip() else "anywhere"
+            search_part = search_term.strip().replace(" ", "_") if search_term and search_term.strip() else "all_jobs"
+            timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")  # e.g., 2026-Aug-06_1530
+            csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
 
             csv = jobs.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "Download results as CSV",
                 data=csv,
-                file_name="jobs.csv",
+                file_name=csv_filename,
                 mime="text/csv",
             )
-else:
-    st.info("Set your search options in the sidebar, then click **Search jobs**.")
+
+# ----------------------------------------------------------------------
+# Footer / Credit
+# ----------------------------------------------------------------------
+st.markdown("---")
+st.markdown(
+    "Powered by [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
+    "a fork of JobSpy for job scraping."
+)
