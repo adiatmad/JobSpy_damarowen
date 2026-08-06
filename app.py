@@ -1,6 +1,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime
+import urllib.parse
 
 import pandas as pd
 import streamlit as st
@@ -13,7 +14,7 @@ st.title("🔎 Job Search Scraper")
 st.caption(
     "Powered by python-jobspy-damarowen — searches LinkedIn, Indeed, ZipRecruiter, "
     "and Glassdoor. Keyword is optional — you can search by location and recency alone.\n\n"
-    "**Google is not scraped** — a manual search suggestion is provided instead (see sidebar)."
+    "**Google is not scraped** — a manual search suggestion is provided after scraping if you enable it."
 )
 
 # ----------------------------------------------------------------------
@@ -28,7 +29,7 @@ PER_SITE_TIMEOUT_SECONDS = 60
 PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
 
 # ----------------------------------------------------------------------
-# Helper functions (your existing logic, mostly unchanged)
+# Helper functions
 # ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
@@ -81,8 +82,6 @@ def build_kwargs_for_site(
 
     if is_remote:
         kwargs["is_remote"] = True
-
-    # Google is not scraped, so we don't build kwargs for it here.
 
     if search_term and search_term.strip():
         kwargs["search_term"] = search_term.strip()
@@ -188,29 +187,6 @@ with st.sidebar:
         "expected for other locations."
     )
 
-    # --- Google manual search section ---
-    st.divider()
-    st.subheader("🔍 Google Jobs (Manual)")
-    google_enabled = st.checkbox(
-        "Show Google search suggestion",
-        value=False,
-        help="We do not scrape Google due to blocking. This builds a query you can use manually."
-    )
-    if google_enabled:
-        # Build the query based on current inputs
-        google_query = build_google_search_term(search_term, location, hours_old)
-        st.code(google_query, language="text")
-        # Create a link that opens Google Jobs with that query
-        # Google Jobs URL format: https://www.google.com/search?q=<query>&ibp=htl;jobs
-        import urllib.parse
-        encoded_query = urllib.parse.quote(google_query)
-        google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
-        st.markdown(f"[🔗 Search on Google Jobs]({google_url})")
-        st.caption("Click the link to open Google Jobs in a new tab.")
-
-    st.divider()
-    # --- End Google section ---
-
     results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
     hours_old = st.number_input(
         "Only show jobs posted within (hours)",
@@ -221,7 +197,15 @@ with st.sidebar:
     )
     is_remote = st.checkbox("Remote jobs only", value=False)
 
-    search_clicked = st.button("Search jobs", type="primary", use_container_width=True)
+    # --- Search button ---
+    search_clicked = st.button("Search jobs", type="primary", width="stretch")  # use width instead of use_container_width
+
+    # --- Google manual suggestion toggle (after the button) ---
+    google_enabled = st.checkbox(
+        "✨ Show Google manual search suggestion after scraping",
+        value=False,
+        help="We do not scrape Google due to blocking. If enabled, we'll build a query you can use manually."
+    )
 
 # ----------------------------------------------------------------------
 # Main logic when search is clicked
@@ -289,31 +273,20 @@ if search_clicked:
                 "loosening the filters."
             )
         else:
-            # --------------------------------------------------------------
-            # Add company career column
-            # --------------------------------------------------------------
-            # If company_url exists, use it; else create a fallback column
+            # Add company career column (as you defined)
             if "company_url" in jobs.columns:
-                # We'll keep it as is; we can also create a clickable link column
-                # But we want a column that is either the URL or a concat.
-                # We'll add a new column called "company_career"
                 jobs["company_career"] = jobs["company_url"].fillna("")
-                # For rows without company_url, set a fallback: company + title
                 mask = jobs["company_career"].str.strip().eq("") | jobs["company_career"].isna()
                 jobs.loc[mask, "company_career"] = jobs.loc[mask, "company"].astype(str) + " " + jobs.loc[mask, "title"].astype(str)
             else:
-                # No company_url at all, just concatenate
                 jobs["company_career"] = jobs["company"].astype(str) + " " + jobs["title"].astype(str)
-
-            # Optionally, make it clickable if it looks like a URL
-            # We can display as plain text for simplicity.
 
             summary = f"Found {len(jobs)} valid jobs across {len(all_dfs)} site(s)"
             if filtered_count:
                 summary += f" — {filtered_count} filtered out as incomplete, stale, or duplicate"
             st.success(summary)
 
-            # Reorder columns to include the new one
+            # Reorder columns
             preferred_cols = [
                 "site", "title", "company", "location", "city", "state",
                 "job_type", "is_remote", "date_posted", "min_amount", "max_amount",
@@ -323,16 +296,12 @@ if search_clicked:
             other_cols = [c for c in jobs.columns if c not in existing_preferred]
             jobs = jobs[existing_preferred + other_cols]
 
-            st.dataframe(jobs, use_container_width=True, hide_index=True)
+            st.dataframe(jobs, width="stretch", hide_index=True)  # replaced use_container_width
 
-            # ------------------------------------------------------------------
             # CSV download with dynamic name
-            # ------------------------------------------------------------------
-            # Build filename: jobs_{search_term}_{location}_{YYYY-MMM-DD_HHMM}.csv
-            # Use location if provided, else "anywhere"
             loc_part = location.strip().replace(" ", "_") if location and location.strip() else "anywhere"
             search_part = search_term.strip().replace(" ", "_") if search_term and search_term.strip() else "all_jobs"
-            timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")  # e.g., 2026-Aug-06_1530
+            timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
             csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
 
             csv = jobs.to_csv(index=False).encode("utf-8")
@@ -342,6 +311,26 @@ if search_clicked:
                 file_name=csv_filename,
                 mime="text/csv",
             )
+
+            # --------------------------------------------------------------
+            # Google manual suggestion (only after successful search & if enabled)
+            # --------------------------------------------------------------
+            if google_enabled:
+                st.divider()
+                st.subheader("🔍 Extra: Google Jobs Manual Search")
+                google_query = build_google_search_term(search_term, location, hours_old)
+                st.caption(
+                    "This is a suggested query you can use on Google Jobs. "
+                    "Click the link below to open it in a new tab."
+                )
+                st.code(google_query, language="text")
+                encoded_query = urllib.parse.quote(google_query)
+                google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
+                st.markdown(f"[🔗 Search this on Google Jobs]({google_url})")
+                st.caption(
+                    "Google Jobs often has listings that don't appear on other boards – "
+                    "this helps you cast a wider net!"
+                )
 
 # ----------------------------------------------------------------------
 # Footer / Credit
