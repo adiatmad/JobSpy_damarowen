@@ -22,7 +22,7 @@ PER_SITE_TIMEOUT_SECONDS = 60
 PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
 
 # ----------------------------------------------------------------------
-# Helper functions (unchanged)
+# Helper functions
 # ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
@@ -59,11 +59,10 @@ def build_google_search_term(search_term: str, location: str, hours_old: int) ->
 
 def build_kwargs_for_site(
     site: str, search_term: str, location: str, country_indeed: str,
-    results_wanted: int, hours_old: int, is_remote: bool,
+    results_wanted: int, hours_old: int,
 ) -> dict:
     kwargs = dict(site_name=[site], results_wanted=results_wanted, verbose=0)
 
-    # Location is optional – only add if provided
     if location and location.strip():
         kwargs["location"] = location.strip()
 
@@ -73,8 +72,7 @@ def build_kwargs_for_site(
     if hours_old and hours_old > 0:
         kwargs["hours_old"] = int(hours_old)
 
-    if is_remote:
-        kwargs["is_remote"] = True
+    # is_remote removed entirely – no longer passed
 
     if search_term and search_term.strip():
         kwargs["search_term"] = search_term.strip()
@@ -136,7 +134,7 @@ def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
     return jobs
 
 # ----------------------------------------------------------------------
-# Tab UI: Search & Playbook
+# Tab UI
 # ----------------------------------------------------------------------
 tab1, tab2 = st.tabs(["🔍 Search Jobs", "📖 Job Search Playbook"])
 
@@ -144,21 +142,20 @@ tab1, tab2 = st.tabs(["🔍 Search Jobs", "📖 Job Search Playbook"])
 with tab1:
     st.caption(
         "Powered by python-jobspy-damarowen — searches LinkedIn, Indeed, ZipRecruiter, "
-        "and Glassdoor. Keyword is optional — you can search by location and recency alone.\n\n"
+        "and Glassdoor. Keyword is optional.\n\n"
         "**Google is not scraped** — a manual search suggestion is provided after scraping if you enable it."
     )
 
     with st.sidebar:
         st.header("Search settings")
 
-        # --- Location is now optional ---
         location = st.text_input(
             "Location (optional)",
-            value="",  # empty by default
-            help="Leave empty for remote jobs or nationwide search (if supported)."
+            value="",
+            help="Leave empty for broader search (useful for remote)."
         )
         if not location:
-            st.caption("💡 Location empty → will try to search broadly (good for remote).")
+            st.caption("💡 Location empty → will try to search broadly.")
 
         country_indeed = st.text_input(
             "Country (for Indeed/Glassdoor)",
@@ -168,7 +165,7 @@ with tab1:
         search_term = st.text_input(
             "Job title / keywords (optional)",
             value="",
-            help="Leave blank to get all valid postings for the location and recency filters."
+            help="Leave blank to get all postings for the location and recency filters."
         )
 
         st.caption("Job sites to scrape")
@@ -182,7 +179,7 @@ with tab1:
                     "glassdoor 🚫",
                     value=False,
                     disabled=True,
-                    help=f"Glassdoor has no site for '{country_indeed}' in this library.",
+                    help=f"Glassdoor has no site for '{country_indeed}'.",
                     key="site_glassdoor",
                 )
             else:
@@ -193,8 +190,7 @@ with tab1:
         if not glassdoor_ok:
             st.caption(f"⚠️ Glassdoor is disabled — not available for '{country_indeed}'.")
         st.caption(
-            "⚠️ zip_recruiter only covers US/Canada listings — irrelevant results are "
-            "expected for other locations."
+            "⚠️ zip_recruiter only covers US/Canada listings — irrelevant results for other locations."
         )
 
         results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
@@ -205,19 +201,19 @@ with tab1:
             step=24,
             help="Set to 0 to ignore this filter.",
         )
-        is_remote = st.checkbox("Remote jobs only", value=False)
 
-        # --- Search button ---
+        # Remote checkbox removed – users are directed to Playbook for remote search techniques.
+
         search_clicked = st.button("Search jobs", type="primary", width="stretch")
 
-        # --- Google manual suggestion toggle (after the button) ---
+        # Google manual suggestion toggle
         google_enabled = st.checkbox(
             "✨ Show Google manual search suggestion after scraping",
             value=False,
             help="We do not scrape Google due to blocking. If enabled, we'll build a query you can use manually."
         )
 
-    # ===== MAIN SEARCH LOGIC (copied from your version, with location optional) =====
+    # ===== MAIN SEARCH LOGIC =====
     if search_clicked:
         if not sites:
             st.error("Pick at least one job site from the sidebar (Google is not scraped).")
@@ -225,11 +221,10 @@ with tab1:
 
         common_inputs = dict(
             search_term=search_term,
-            location=location,          # may be empty string
+            location=location,
             country_indeed=country_indeed,
             results_wanted=results_wanted,
             hours_old=hours_old,
-            is_remote=is_remote,
         )
 
         all_dfs = []
@@ -294,7 +289,6 @@ with tab1:
                     summary += f" — {filtered_count} filtered out as incomplete, stale, or duplicate"
                 st.success(summary)
 
-                # Reorder columns
                 preferred_cols = [
                     "site", "title", "company", "location", "city", "state",
                     "job_type", "is_remote", "date_posted", "min_amount", "max_amount",
@@ -320,7 +314,7 @@ with tab1:
                     mime="text/csv",
                 )
 
-                # Google manual suggestion (only after successful search & if enabled)
+                # Google manual suggestion
                 if google_enabled:
                     st.divider()
                     st.subheader("🔍 Extra: Google Jobs Manual Search")
@@ -343,7 +337,6 @@ with tab2:
     st.title("📖 Job Search Playbook")
     st.markdown("**Practical techniques to find valid job information using Google Search.**")
 
-    # --- Section 1: Quick Start ---
     with st.expander("🚀 Quick Start – Copy‑paste these keywords", expanded=True):
         st.markdown("**1. General job search (Indonesia)**")
         st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org)', language="text")
@@ -355,7 +348,6 @@ with tab2:
         st.markdown("**3. Surabaya – Gresik area**")
         st.code('intext:(recruitment OR rekrutmen OR karir OR lowongan OR career) AND (surabaya OR gresik)', language="text")
 
-    # --- Section 2: Location-Based Generator ---
     with st.expander("📍 Build your own location query"):
         col1, col2 = st.columns(2)
         with col1:
@@ -376,32 +368,30 @@ with tab2:
             st.code(query, language="text")
             st.markdown(f"[🔗 Search on Google](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
-    # --- Section 3: Portal Scanner (BambooHR, etc.) ---
-    with st.expander("🏢 Scan specific job portals"):
-        st.markdown("These portals are often used by companies with good culture and benefits.")
+    with st.expander("🏢 Scan specific job portals (including remote)"):
+        st.markdown("These portals often have remote-friendly companies.")
         portals = [
             ("BambooHR", "inurl:bamboohr.com 'jobs/view' remote after:2026-05-01"),
-            ("Greenhouse", "site:greenhouse.io 'Remote'"),
+            ("Greenhouse", "site:greenhouse.io Remote"),
             ("Lever", "site:jobs.lever.co Remote"),
             ("Workable", "site:careers.workable.com Remote"),
+            ("Remote OK", "site:remoteok.com remote"),
+            ("We Work Remotely", "site:weworkremotely.com"),
         ]
         for name, query in portals:
             st.markdown(f"**{name}**")
             st.code(query, language="text")
             st.markdown(f"[🔗 Search](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
-    # --- Section 4: LinkedIn Time Filter ---
     with st.expander("🔗 LinkedIn time filter (last 24 hours)"):
         st.markdown("Use this link to see jobs posted in the last 24 hours. Change the number after `r` for different time windows (seconds).")
         linkedin_location = st.text_input("LinkedIn location (e.g., Surabaya)", "Surabaya")
         linkedin_keyword = st.text_input("LinkedIn keyword", "hiring")
         if st.button("Generate LinkedIn Link"):
-            # Build a basic LinkedIn search URL with the time filter r86400 (24h)
-            # We'll use a generic approach – user can adjust the r value.
             base = "https://www.linkedin.com/jobs/search/"
             params = {
                 "keywords": f"{linkedin_keyword} {linkedin_location}",
-                "f_TPR": "r86400",  # 24 hours
+                "f_TPR": "r86400",
                 "origin": "JOB_SEARCH_PAGE_JOB_FILTER",
                 "sortBy": "R"
             }
@@ -411,7 +401,6 @@ with tab2:
             st.markdown(f"[🔗 Open LinkedIn search]({url})")
             st.caption("💡 Change `r86400` to `r172800` for 48h, `r43200` for 12h, etc.")
 
-    # --- Section 5: AI Helper Prompts ---
     with st.expander("🤖 AI Helper – Generate keywords with ChatGPT / DeepSeek"):
         st.markdown("Copy this prompt and paste it into ChatGPT, DeepSeek, or Meta AI to get custom search queries.")
         prompt = """Buatkan kata kunci untuk mencari informasi pekerjaan bidang [your field] di [your location] lewat Google Search dengan teknik Google Dorking.
@@ -425,7 +414,6 @@ Buatkan 5–10 variasi dengan operator yang berbeda."""
         st.code(prompt, language="text")
         st.caption("💡 Replace the bracketed parts with your own field and location.")
 
-    # --- Section 6: Community & Tools ---
     with st.expander("🌐 Community & Free Tools"):
         st.markdown("**Join the community**")
         st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu) – structured discussions about job hunting abroad and more.")
@@ -450,7 +438,7 @@ Buat ringkasan 2–3 paragraf yang mudah dipahami."""
         if st.button("Submit Tip"):
             st.success("Thank you! Your tip has been recorded (this is a demo).")
 
-# ==================== FOOTER (visible on both tabs) ====================
+# ==================== FOOTER ====================
 st.markdown("---")
 st.markdown(
     "Powered by [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
