@@ -155,7 +155,7 @@ def validate_jobs(jobs: pd.DataFrame, hours_old: int) -> pd.DataFrame:
         jobs = jobs[jobs["job_url"].notna() & (jobs["job_url"].astype(str).str.strip() != "")]
 
     if hours_old and hours_old > 0 and "date_posted" in jobs.columns:
-        cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(hours=hours_old)
+        cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(hours=int(hours_old))
         parsed_dates = pd.to_datetime(jobs["date_posted"], errors="coerce")
         # Only drop rows we can confidently parse as stale — don't punish rows
         # where the site simply didn't supply a parseable date.
@@ -235,7 +235,7 @@ with st.sidebar:
     )
     is_remote = st.checkbox("Remote jobs only", value=False)
 
-    search_clicked = st.button("Search jobs", type="primary", use_container_width=True)
+    search_clicked = st.button("Search jobs", type="primary", width="stretch")
 
 if search_clicked:
     if not sites:
@@ -314,7 +314,7 @@ if search_clicked:
             other_cols = [c for c in jobs.columns if c not in existing_preferred]
             jobs = jobs[existing_preferred + other_cols]
 
-            st.dataframe(jobs, use_container_width=True, hide_index=True)
+            st.dataframe(jobs, width="stretch", hide_index=True)
 
             csv = jobs.to_csv(index=False).encode("utf-8")
             st.download_button(
