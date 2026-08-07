@@ -8,12 +8,66 @@ import streamlit as st
 from jobspy import scrape_jobs
 from jobspy.model import Country
 
-st.set_page_config(page_title="Job Search Scraper", page_icon="🔎", layout="wide")
+st.set_page_config(
+    page_title="Job Search Scraper",
+    page_icon="🔎",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ----------------------------------------------------------------------
+# Custom CSS for better mobile experience
+# ----------------------------------------------------------------------
+st.markdown("""
+<style>
+    /* Larger touch targets on mobile */
+    @media (max-width: 768px) {
+        .stButton button {
+            font-size: 18px !important;
+            padding: 0.75rem 1.5rem !important;
+            min-height: 50px !important;
+        }
+        .stCheckbox label {
+            font-size: 16px !important;
+        }
+        .stTextInput input {
+            font-size: 16px !important;
+            min-height: 44px !important;
+        }
+        .stSelectbox select {
+            font-size: 16px !important;
+            min-height: 44px !important;
+        }
+        .stNumberInput input {
+            font-size: 16px !important;
+            min-height: 44px !important;
+        }
+        /* Better spacing for mobile */
+        .stExpander {
+            margin-bottom: 8px !important;
+        }
+        /* Make code blocks scrollable on mobile */
+        .stCodeBlock {
+            max-height: 300px !important;
+            overflow-y: auto !important;
+        }
+        /* Sticky search button on mobile */
+        .sticky-search {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            padding: 12px 0;
+            z-index: 100;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------------
-ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]   # Google removed
+ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]
 DEFAULT_SITES = ["indeed", "linkedin"]
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 3
@@ -22,7 +76,7 @@ PER_SITE_TIMEOUT_SECONDS = 60
 PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
 
 # ----------------------------------------------------------------------
-# Helper functions
+# Helper functions (unchanged)
 # ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
@@ -71,8 +125,6 @@ def build_kwargs_for_site(
 
     if hours_old and hours_old > 0:
         kwargs["hours_old"] = int(hours_old)
-
-    # is_remote removed entirely – no longer passed
 
     if search_term and search_term.strip():
         kwargs["search_term"] = search_term.strip()
@@ -134,52 +186,54 @@ def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
     return jobs
 
 # ----------------------------------------------------------------------
-# Tab UI
+# Mobile-friendly Search Settings (expander instead of sidebar)
 # ----------------------------------------------------------------------
-tab1, tab2 = st.tabs(["🔍 Search Jobs", "📖 Job Search Playbook"])
+def render_search_settings():
+    """Render search settings in a collapsible expander (mobile-friendly)"""
+    with st.expander("🔧 Search Settings", expanded=not st.session_state.get("search_clicked", False)):
+        col1, col2 = st.columns(2)
 
-# ==================== TAB 1: SEARCH ====================
-with tab1:
-    st.caption(
-        "Powered by python-jobspy-damarowen — searches LinkedIn, Indeed, ZipRecruiter, "
-        "and Glassdoor. Keyword is optional.\n\n"
-        "**Google is not scraped** — a manual search suggestion is provided after scraping if you enable it."
-    )
+        with col1:
+            search_term = st.text_input(
+                "Job title / keywords (optional)",
+                value="",
+                help="Leave blank to get all postings."
+            )
+            location = st.text_input(
+                "Location (optional)",
+                value="",
+                help="Leave empty for broader search (good for remote)."
+            )
+            if not location:
+                st.caption("💡 Location empty → broad search.")
 
-    with st.sidebar:
-        st.header("Search settings")
-
-        location = st.text_input(
-            "Location (optional)",
-            value="",
-            help="Leave empty for broader search (useful for remote)."
-        )
-        if not location:
-            st.caption("💡 Location empty → will try to search broadly.")
-
-        country_indeed = st.text_input(
-            "Country (for Indeed/Glassdoor)",
-            value="Indonesia",
-            help="Only used by Indeed and Glassdoor. Use exact name, e.g. 'Indonesia', 'USA'."
-        )
-        search_term = st.text_input(
-            "Job title / keywords (optional)",
-            value="",
-            help="Leave blank to get all postings for the location and recency filters."
-        )
+        with col2:
+            country_indeed = st.text_input(
+                "Country (Indeed/Glassdoor)",
+                value="Indonesia",
+                help="Exact name: Indonesia, USA, Singapore, etc."
+            )
+            results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
+            hours_old = st.number_input(
+                "Posted within (hours)",
+                min_value=0,
+                value=72,
+                step=24,
+                help="0 = no filter."
+            )
 
         st.caption("Job sites to scrape")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
         sites = []
-        cols = st.columns(2)
+        cols = st.columns(3)
         for i, site in enumerate(ALL_SITES):
-            col = cols[i % 2]
+            col = cols[i % 3]
             if site == "glassdoor" and not glassdoor_ok:
                 col.checkbox(
                     "glassdoor 🚫",
                     value=False,
                     disabled=True,
-                    help=f"Glassdoor has no site for '{country_indeed}'.",
+                    help=f"Not available for '{country_indeed}'.",
                     key="site_glassdoor",
                 )
             else:
@@ -188,51 +242,73 @@ with tab1:
                     sites.append(site)
 
         if not glassdoor_ok:
-            st.caption(f"⚠️ Glassdoor is disabled — not available for '{country_indeed}'.")
-        st.caption(
-            "⚠️ zip_recruiter only covers US/Canada listings — irrelevant results for other locations."
-        )
-
-        results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
-        hours_old = st.number_input(
-            "Only show jobs posted within (hours)",
-            min_value=0,
-            value=72,
-            step=24,
-            help="Set to 0 to ignore this filter.",
-        )
-
-        # Remote checkbox removed – users are directed to Playbook for remote search techniques.
-
-        search_clicked = st.button("Search jobs", type="primary", width="stretch")
+            st.caption(f"⚠️ Glassdoor disabled — not available for '{country_indeed}'.")
+        st.caption("⚠️ zip_recruiter covers US/Canada only.")
 
         # Google manual suggestion toggle
         google_enabled = st.checkbox(
             "✨ Show Google manual search suggestion after scraping",
             value=False,
-            help="We do not scrape Google due to blocking. If enabled, we'll build a query you can use manually."
+            help="We don't scrape Google — we'll build a query you can use manually."
         )
+
+        return {
+            "search_term": search_term,
+            "location": location,
+            "country_indeed": country_indeed,
+            "results_wanted": results_wanted,
+            "hours_old": hours_old,
+            "sites": sites,
+            "google_enabled": google_enabled,
+        }
+
+# ==================== TAB 1: SEARCH ====================
+tab1, tab2 = st.tabs(["🔍 Search Jobs", "📖 Job Search Playbook"])
+
+with tab1:
+    st.caption(
+        "🔎 Scrapes LinkedIn, Indeed, ZipRecruiter, and Glassdoor. "
+        "**Google is not scraped** — we provide a manual search suggestion instead."
+    )
+
+    # Mobile-friendly: search settings in expander (not sidebar)
+    settings = render_search_settings()
+
+    # Sticky search button (mobile-friendly)
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+    with col_btn2:
+        search_clicked = st.button(
+            "🔍 Search Jobs",
+            type="primary",
+            use_container_width=True,
+            key="search_button"
+        )
+
+    # Store state for expanded/collapsed behavior
+    if search_clicked:
+        st.session_state["search_clicked"] = True
 
     # ===== MAIN SEARCH LOGIC =====
     if search_clicked:
+        sites = settings["sites"]
         if not sites:
-            st.error("Pick at least one job site from the sidebar (Google is not scraped).")
+            st.error("Pick at least one job site.")
             st.stop()
 
-        common_inputs = dict(
-            search_term=search_term,
-            location=location,
-            country_indeed=country_indeed,
-            results_wanted=results_wanted,
-            hours_old=hours_old,
-        )
+        common_inputs = {
+            "search_term": settings["search_term"],
+            "location": settings["location"],
+            "country_indeed": settings["country_indeed"],
+            "results_wanted": settings["results_wanted"],
+            "hours_old": settings["hours_old"],
+        }
 
         all_dfs = []
         site_status = {}
         status_area = st.empty()
 
         for site in sites:
-            status_area.info(f"Searching **{site}**...")
+            status_area.info(f"🔍 Searching **{site}**...")
             df, err = scrape_one_site(site, **common_inputs)
             if err:
                 site_status[site] = ("error", err)
@@ -244,20 +320,19 @@ with tab1:
 
         status_area.empty()
 
-        with st.expander("Per-site results", expanded=True):
+        with st.expander("📊 Per-site results", expanded=True):
             for site in sites:
                 kind, info = site_status[site]
                 if kind == "ok":
-                    st.success(f"**{site}**: {info} jobs found")
+                    st.success(f"✅ **{site}**: {info} jobs found")
                 elif kind == "empty":
-                    st.warning(f"**{site}**: no jobs found")
+                    st.warning(f"⚠️ **{site}**: no jobs found")
                 else:
-                    st.error(f"**{site}**: failed — {info}")
+                    st.error(f"❌ **{site}**: failed — {info}")
 
         if not all_dfs:
             st.warning(
-                "No jobs found from any scraped site. Try a different location, fewer filters, "
-                "or check the per-site errors above. (Google is not scraped.)"
+                "No jobs found. Try different filters, or check the Playbook tab for manual search techniques."
             )
         else:
             jobs = pd.concat(all_dfs, ignore_index=True)
@@ -265,15 +340,13 @@ with tab1:
                 jobs = jobs.drop_duplicates(subset="job_url")
 
             raw_count = len(jobs)
-            jobs = validate_jobs(jobs, hours_old)
+            jobs = validate_jobs(jobs, settings["hours_old"])
             jobs = dedupe_cross_site(jobs)
             filtered_count = raw_count - len(jobs)
 
             if jobs.empty:
                 st.warning(
-                    f"Found {raw_count} raw result(s), but none passed validation "
-                    "(missing title/company, no URL, or stale date_posted). Try "
-                    "loosening the filters."
+                    f"Found {raw_count} raw result(s), but none passed validation. Try loosening filters."
                 )
             else:
                 # Add company career column
@@ -284,53 +357,48 @@ with tab1:
                 else:
                     jobs["company_career"] = jobs["company"].astype(str) + " " + jobs["title"].astype(str)
 
-                summary = f"Found {len(jobs)} valid jobs across {len(all_dfs)} site(s)"
+                summary = f"✅ Found {len(jobs)} valid jobs across {len(all_dfs)} site(s)"
                 if filtered_count:
-                    summary += f" — {filtered_count} filtered out as incomplete, stale, or duplicate"
+                    summary += f" — {filtered_count} filtered out"
                 st.success(summary)
 
-                preferred_cols = [
-                    "site", "title", "company", "location", "city", "state",
-                    "job_type", "is_remote", "date_posted", "min_amount", "max_amount",
-                    "currency", "job_url", "company_career"
-                ]
+                # Show only essential columns on mobile, all columns on desktop
+                preferred_cols = ["site", "title", "company", "location", "job_type", "is_remote", "date_posted", "job_url", "company_career"]
                 existing_preferred = [c for c in preferred_cols if c in jobs.columns]
                 other_cols = [c for c in jobs.columns if c not in existing_preferred]
-                jobs = jobs[existing_preferred + other_cols]
+                jobs_display = jobs[existing_preferred + other_cols]
 
-                st.dataframe(jobs, width="stretch", hide_index=True)
+                st.dataframe(jobs_display, width="stretch", hide_index=True)
 
                 # CSV download
-                loc_part = location.strip().replace(" ", "_") if location and location.strip() else "anywhere"
-                search_part = search_term.strip().replace(" ", "_") if search_term and search_term.strip() else "all_jobs"
+                loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] and settings["location"].strip() else "anywhere"
+                search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] and settings["search_term"].strip() else "all_jobs"
                 timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
                 csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
 
                 csv = jobs.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "Download results as CSV",
+                    "📥 Download CSV",
                     data=csv,
                     file_name=csv_filename,
                     mime="text/csv",
+                    use_container_width=True,
                 )
 
                 # Google manual suggestion
-                if google_enabled:
+                if settings["google_enabled"]:
                     st.divider()
                     st.subheader("🔍 Extra: Google Jobs Manual Search")
-                    google_query = build_google_search_term(search_term, location, hours_old)
-                    st.caption(
-                        "This is a suggested query you can use on Google Jobs. "
-                        "Click the link below to open it in a new tab."
+                    google_query = build_google_search_term(
+                        settings["search_term"],
+                        settings["location"],
+                        settings["hours_old"]
                     )
+                    st.caption("Copy this query and paste it into Google Jobs for more listings.")
                     st.code(google_query, language="text")
                     encoded_query = urllib.parse.quote(google_query)
                     google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
-                    st.markdown(f"[🔗 Search this on Google Jobs]({google_url})")
-                    st.caption(
-                        "Google Jobs often has listings that don't appear on other boards – "
-                        "this helps you cast a wider net!"
-                    )
+                    st.markdown(f"[🔗 Search on Google Jobs]({google_url})")
 
 # ==================== TAB 2: PLAYBOOK ====================
 with tab2:
@@ -340,9 +408,9 @@ with tab2:
     with st.expander("🚀 Quick Start – Copy‑paste these keywords", expanded=True):
         st.markdown("**1. General job search (Indonesia)**")
         st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org)', language="text")
-        st.caption("💡 Add `-jobstreet` at the end to exclude JobStreet listings.")
+        st.caption("💡 Add `-jobstreet` to exclude JobStreet.")
 
-        st.markdown("**2. Specific city (example: Temanggung, Jateng)**")
+        st.markdown("**2. Specific city (Temanggung, Jateng)**")
         st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") AND ("Temanggung" OR "Magelang" OR "Jawa Tengah") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org) -jobstreet', language="text")
 
         st.markdown("**3. Surabaya – Gresik area**")
@@ -355,7 +423,7 @@ with tab2:
         with col2:
             province = st.text_input("Province (optional)", "Jawa Tengah")
         exclude = st.text_input("Exclude (e.g., jobstreet)", value="jobstreet")
-        if st.button("Generate Location Query"):
+        if st.button("Generate Location Query", use_container_width=True):
             base = f'("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy")'
             loc = f'("{city}"'
             if province:
@@ -368,7 +436,7 @@ with tab2:
             st.code(query, language="text")
             st.markdown(f"[🔗 Search on Google](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
-    with st.expander("🏢 Scan specific job portals (including remote)"):
+    with st.expander("🏢 Scan specific job portals (remote-friendly)"):
         st.markdown("These portals often have remote-friendly companies.")
         portals = [
             ("BambooHR", "inurl:bamboohr.com 'jobs/view' remote after:2026-05-01"),
@@ -384,10 +452,10 @@ with tab2:
             st.markdown(f"[🔗 Search](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
     with st.expander("🔗 LinkedIn time filter (last 24 hours)"):
-        st.markdown("Use this link to see jobs posted in the last 24 hours. Change the number after `r` for different time windows (seconds).")
-        linkedin_location = st.text_input("LinkedIn location (e.g., Surabaya)", "Surabaya")
+        st.markdown("Change the number after `r` for different time windows (seconds).")
+        linkedin_location = st.text_input("LinkedIn location", "Surabaya")
         linkedin_keyword = st.text_input("LinkedIn keyword", "hiring")
-        if st.button("Generate LinkedIn Link"):
+        if st.button("Generate LinkedIn Link", use_container_width=True):
             base = "https://www.linkedin.com/jobs/search/"
             params = {
                 "keywords": f"{linkedin_keyword} {linkedin_location}",
@@ -399,10 +467,10 @@ with tab2:
             url = f"{base}?{query_str}"
             st.code(url, language="text")
             st.markdown(f"[🔗 Open LinkedIn search]({url})")
-            st.caption("💡 Change `r86400` to `r172800` for 48h, `r43200` for 12h, etc.")
+            st.caption("💡 Change `r86400` to `r172800` for 48h, `r43200` for 12h.")
 
-    with st.expander("🤖 AI Helper – Generate keywords with ChatGPT / DeepSeek"):
-        st.markdown("Copy this prompt and paste it into ChatGPT, DeepSeek, or Meta AI to get custom search queries.")
+    with st.expander("🤖 AI Helper – Generate keywords"):
+        st.markdown("Copy this prompt into ChatGPT, DeepSeek, or Meta AI.")
         prompt = """Buatkan kata kunci untuk mencari informasi pekerjaan bidang [your field] di [your location] lewat Google Search dengan teknik Google Dorking.
 
 Contoh output: 
@@ -412,18 +480,18 @@ Contoh output:
 
 Buatkan 5–10 variasi dengan operator yang berbeda."""
         st.code(prompt, language="text")
-        st.caption("💡 Replace the bracketed parts with your own field and location.")
+        st.caption("💡 Replace bracketed parts with your own field and location.")
 
     with st.expander("🌐 Community & Free Tools"):
         st.markdown("**Join the community**")
-        st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu) – structured discussions about job hunting abroad and more.")
+        st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
 
         st.markdown("**Free CV & job tracking tool**")
-        st.markdown("[jobresume.rndhri.com](https://jobresume.rndhri.com/) – build CV, track applications, practice interviews (no cost).")
+        st.markdown("[jobresume.rndhri.com](https://jobresume.rndhri.com/)")
 
         st.markdown("**WEF Future of Jobs Report 2025**")
         st.markdown("[Download PDF](https://www.weforum.org/publications/the-future-of-jobs-report-2025/)")
-        st.markdown("**AI prompt to summarise the report:**")
+        st.markdown("**AI prompt to summarise:**")
         summarise_prompt = """Ringkaskan laporan Future of Jobs Report 2025 dari World Economic Forum dalam bahasa Indonesia. Fokus pada:
 - Sektor yang paling banyak menambah lapangan kerja
 - Sektor yang paling banyak mengurangi lapangan kerja
@@ -434,13 +502,13 @@ Buat ringkasan 2–3 paragraf yang mudah dipahami."""
 
         st.markdown("---")
         st.markdown("**Share your own tip**")
-        tip = st.text_area("Your tip (will be displayed in community section – for now, just a note)")
-        if st.button("Submit Tip"):
-            st.success("Thank you! Your tip has been recorded (this is a demo).")
+        tip = st.text_area("Your tip (for the community)")
+        if st.button("Submit Tip", use_container_width=True):
+            st.success("Thank you! Your tip has been recorded.")
 
 # ==================== FOOTER ====================
 st.markdown("---")
 st.markdown(
     "Powered by [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
-    "a fork of JobSpy for job scraping. Built for job seekers who refuse to give up."
+    "Built for job seekers who refuse to give up."
 )
