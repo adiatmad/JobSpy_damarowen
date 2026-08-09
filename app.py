@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="Job Search Scraper",
     page_icon="🔎",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ----------------------------------------------------------------------
@@ -42,11 +42,9 @@ st.markdown("""
             font-size: 16px !important;
             min-height: 44px !important;
         }
-        /* Better spacing for mobile */
         .stExpander {
             margin-bottom: 8px !important;
         }
-        /* Make code blocks scrollable on mobile */
         .stCodeBlock {
             max-height: 300px !important;
             overflow-y: auto !important;
@@ -60,6 +58,43 @@ st.markdown("""
             z-index: 100;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
         }
+        /* Dua card styling */
+        .dua-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 16px 0;
+            border-right: 4px solid #2e7d32;
+        }
+        .dua-card p {
+            font-size: 18px;
+            line-height: 1.8;
+            color: #1a1a1a;
+        }
+        .dua-card .attribution {
+            font-size: 14px;
+            color: #555;
+            font-style: italic;
+        }
+    }
+    /* Desktop styles for dua card */
+    .dua-card {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        border-right: 4px solid #2e7d32;
+    }
+    .dua-card p {
+        font-size: 20px;
+        line-height: 1.8;
+        color: #1a1a1a;
+    }
+    .dua-card .attribution {
+        font-size: 14px;
+        color: #555;
+        font-style: italic;
+        margin-top: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -76,7 +111,7 @@ PER_SITE_TIMEOUT_SECONDS = 60
 PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
 
 # ----------------------------------------------------------------------
-# Helper functions (unchanged)
+# Helper functions
 # ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
@@ -91,7 +126,14 @@ def glassdoor_supports_country(country_str: str) -> bool:
         return False
     return len(country.value) == 3
 
-def build_google_search_term(search_term: str, location: str, hours_old: int) -> str:
+def build_google_search_term(
+    search_term: str,
+    location: str,
+    hours_old: int,
+    exclude_age: bool = False,
+    custom_exclude: str = "",
+) -> str:
+    """Build the query Google Jobs expects, with optional exclusions."""
     term = search_term.strip() if search_term and search_term.strip() else ""
     if not term:
         term = "jobs"
@@ -108,6 +150,16 @@ def build_google_search_term(search_term: str, location: str, hours_old: int) ->
             term += " this week"
         elif hours_old <= 24 * 30:
             term += " this month"
+
+    # Age exclusions
+    if exclude_age:
+        term += " -usia -age -umur"
+
+    # Custom exclusions (app adds - automatically)
+    if custom_exclude and custom_exclude.strip():
+        for word in custom_exclude.strip().split():
+            if word.strip():
+                term += f" -{word.strip()}"
 
     return term
 
@@ -186,43 +238,45 @@ def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
     return jobs
 
 # ----------------------------------------------------------------------
-# Mobile-friendly Search Settings (expander instead of sidebar)
+# Render Search Settings (mobile-friendly expander)
 # ----------------------------------------------------------------------
 def render_search_settings():
     """Render search settings in a collapsible expander (mobile-friendly)"""
-    with st.expander("🔧 Search Settings", expanded=not st.session_state.get("search_clicked", False)):
+    with st.expander("🔧 Pengaturan Pencarian", expanded=not st.session_state.get("search_clicked", False)):
+        st.caption("Atur parameter pencarian di sini.")
+
         col1, col2 = st.columns(2)
 
         with col1:
             search_term = st.text_input(
-                "Job title / keywords (optional)",
+                "Kata kunci pekerjaan (opsional)",
                 value="",
-                help="Leave blank to get all postings."
+                help="Kosongkan untuk mencari semua postingan."
             )
             location = st.text_input(
-                "Location (optional)",
+                "Lokasi (opsional)",
                 value="",
-                help="Leave empty for broader search (good for remote)."
+                help="Kosongkan untuk pencarian lebih luas (cocok untuk remote)."
             )
             if not location:
-                st.caption("💡 Location empty → broad search.")
+                st.caption("💡 Lokasi kosong → pencarian lebih luas.")
 
         with col2:
             country_indeed = st.text_input(
-                "Country (Indeed/Glassdoor)",
+                "Negara (Indeed/Glassdoor)",
                 value="Indonesia",
-                help="Exact name: Indonesia, USA, Singapore, etc."
+                help="Contoh: Indonesia, USA, Singapore, Malaysia."
             )
-            results_wanted = st.slider("Results per site", min_value=5, max_value=100, value=20, step=5)
+            results_wanted = st.slider("Hasil per situs", min_value=5, max_value=100, value=20, step=5)
             hours_old = st.number_input(
-                "Posted within (hours)",
+                "Diposting dalam (jam)",
                 min_value=0,
                 value=72,
                 step=24,
-                help="0 = no filter."
+                help="0 = tidak ada filter."
             )
 
-        st.caption("Job sites to scrape")
+        st.caption("Pilih situs pekerjaan")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
         sites = []
         cols = st.columns(3)
@@ -233,7 +287,7 @@ def render_search_settings():
                     "glassdoor 🚫",
                     value=False,
                     disabled=True,
-                    help=f"Not available for '{country_indeed}'.",
+                    help=f"Tidak tersedia untuk '{country_indeed}'.",
                     key="site_glassdoor",
                 )
             else:
@@ -242,15 +296,35 @@ def render_search_settings():
                     sites.append(site)
 
         if not glassdoor_ok:
-            st.caption(f"⚠️ Glassdoor disabled — not available for '{country_indeed}'.")
-        st.caption("⚠️ zip_recruiter covers US/Canada only.")
+            st.caption(f"⚠️ Glassdoor dinonaktifkan — tidak tersedia untuk '{country_indeed}'.")
+        st.caption("⚠️ zip_recruiter hanya mencakup US/Canada.")
 
-        # Google manual suggestion toggle
+        # Google manual suggestion
         google_enabled = st.checkbox(
-            "✨ Show Google manual search suggestion after scraping",
+            "✨ Tampilkan saran pencarian Google manual setelah scraping",
             value=False,
-            help="We don't scrape Google — we'll build a query you can use manually."
+            help="Google tidak discrap — kami akan buatkan query yang bisa Anda gunakan secara manual."
         )
+
+        # Google extra settings (only shown when google_enabled is checked)
+        exclude_age = False
+        custom_exclude = ""
+        if google_enabled:
+            st.markdown("---")
+            st.caption("🔍 Pengaturan tambahan untuk pencarian Google manual")
+
+            exclude_age = st.checkbox(
+                "Hilangkan listing yang sebut usia (-usia -age -umur)",
+                value=False,
+                help="Hanya untuk pencarian Google manual, tidak mempengaruhi hasil scraper."
+            )
+
+            custom_exclude = st.text_input(
+                "Tambahkan kata kunci yang ingin dikecualikan (pisahkan dengan spasi)",
+                value="",
+                placeholder="Contoh: fresh graduate entry level",
+                help="Kata kunci akan ditambahkan tanda minus (-) secara otomatis."
+            )
 
         return {
             "search_term": search_term,
@@ -260,15 +334,17 @@ def render_search_settings():
             "hours_old": hours_old,
             "sites": sites,
             "google_enabled": google_enabled,
+            "exclude_age": exclude_age,
+            "custom_exclude": custom_exclude,
         }
 
 # ==================== TAB 1: SEARCH ====================
-tab1, tab2 = st.tabs(["🔍 Search Jobs", "📖 Job Search Playbook"])
+tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
 
 with tab1:
     st.caption(
-        "🔎 Scrapes LinkedIn, Indeed, ZipRecruiter, and Glassdoor. "
-        "**Google is not scraped** — we provide a manual search suggestion instead."
+        "🔎 Mencari dari LinkedIn, Indeed, ZipRecruiter, dan Glassdoor. "
+        "**Google tidak discrap** — kami berikan saran pencarian manual sebagai gantinya."
     )
 
     # Mobile-friendly: search settings in expander (not sidebar)
@@ -278,13 +354,12 @@ with tab1:
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
         search_clicked = st.button(
-            "🔍 Search Jobs",
+            "🔍 Cari Pekerjaan",
             type="primary",
             use_container_width=True,
             key="search_button"
         )
 
-    # Store state for expanded/collapsed behavior
     if search_clicked:
         st.session_state["search_clicked"] = True
 
@@ -292,7 +367,7 @@ with tab1:
     if search_clicked:
         sites = settings["sites"]
         if not sites:
-            st.error("Pick at least one job site.")
+            st.error("Pilih minimal satu situs pekerjaan.")
             st.stop()
 
         common_inputs = {
@@ -307,8 +382,30 @@ with tab1:
         site_status = {}
         status_area = st.empty()
 
+        # ---- DUA CARD ----
+        st.markdown("""
+        <div class="dua-card">
+            <p>
+                "Barang siapa memperbanyak istighfar; niscaya Allah memberikan jalan keluar bagi setiap kesedihannya, kelapangan untuk setiap kesempitannya dan rizki dari arah yang tidak disangka-sangka."
+            </p>
+            <div class="attribution">— HR. Ahmad dari Ibnu Abbas</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class="dua-card">
+            <p>
+                "Aku (Nabi Nuh) berkata (pada mereka), 'Beristighfarlah kepada Rabb kalian, sungguh Dia Maha Pengampun. Niscaya Dia akan menurunkan kepada kalian hujan yang lebat dari langit. Dan Dia akan memperbanyak harta serta anak-anakmu, juga mengadakan kebun-kebun dan sungai-sungai untukmu.'"
+            </p>
+            <div class="attribution">— QS. Nuh: 10-12</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.caption("⏳ Sedang mencari... semoga dimudahkan.")
+
+        # ---- Scraping loop with progress ----
         for site in sites:
-            status_area.info(f"🔍 Searching **{site}**...")
+            status_area.info(f"🔍 Mencari di **{site}**...")
             df, err = scrape_one_site(site, **common_inputs)
             if err:
                 site_status[site] = ("error", err)
@@ -320,19 +417,21 @@ with tab1:
 
         status_area.empty()
 
-        with st.expander("📊 Per-site results", expanded=True):
+        # ---- Results ----
+        with st.expander("📊 Hasil per situs", expanded=True):
             for site in sites:
                 kind, info = site_status[site]
                 if kind == "ok":
-                    st.success(f"✅ **{site}**: {info} jobs found")
+                    st.success(f"✅ **{site}**: {info} pekerjaan ditemukan")
                 elif kind == "empty":
-                    st.warning(f"⚠️ **{site}**: no jobs found")
+                    st.warning(f"⚠️ **{site}**: tidak ada pekerjaan ditemukan")
                 else:
-                    st.error(f"❌ **{site}**: failed — {info}")
+                    st.error(f"❌ **{site}**: gagal — {info}")
 
         if not all_dfs:
             st.warning(
-                "No jobs found. Try different filters, or check the Playbook tab for manual search techniques."
+                "Tidak ada pekerjaan ditemukan. Coba ubah filter, atau buka tab "
+                "Panduan Pencarian untuk teknik manual."
             )
         else:
             jobs = pd.concat(all_dfs, ignore_index=True)
@@ -346,10 +445,10 @@ with tab1:
 
             if jobs.empty:
                 st.warning(
-                    f"Found {raw_count} raw result(s), but none passed validation. Try loosening filters."
+                    f"Ditemukan {raw_count} hasil mentah, tapi tidak ada yang lolos validasi. Coba longgarkan filter."
                 )
             else:
-                # Add company career column
+                # Company career column
                 if "company_url" in jobs.columns:
                     jobs["company_career"] = jobs["company_url"].fillna("")
                     mask = jobs["company_career"].str.strip().eq("") | jobs["company_career"].isna()
@@ -357,12 +456,12 @@ with tab1:
                 else:
                     jobs["company_career"] = jobs["company"].astype(str) + " " + jobs["title"].astype(str)
 
-                summary = f"✅ Found {len(jobs)} valid jobs across {len(all_dfs)} site(s)"
+                summary = f"✅ Ditemukan {len(jobs)} pekerjaan valid dari {len(all_dfs)} situs"
                 if filtered_count:
-                    summary += f" — {filtered_count} filtered out"
+                    summary += f" — {filtered_count} difilter (tidak lengkap, duplikat, atau sudah kadaluwarsa)"
                 st.success(summary)
 
-                # Show only essential columns on mobile, all columns on desktop
+                # Show essential columns first
                 preferred_cols = ["site", "title", "company", "location", "job_type", "is_remote", "date_posted", "job_url", "company_career"]
                 existing_preferred = [c for c in preferred_cols if c in jobs.columns]
                 other_cols = [c for c in jobs.columns if c not in existing_preferred]
@@ -385,45 +484,55 @@ with tab1:
                     use_container_width=True,
                 )
 
-                # Google manual suggestion
+                # Google manual suggestion (only if enabled)
                 if settings["google_enabled"]:
                     st.divider()
-                    st.subheader("🔍 Extra: Google Jobs Manual Search")
+                    st.subheader("🔍 Ekstra: Pencarian Manual Google Jobs")
+
                     google_query = build_google_search_term(
-                        settings["search_term"],
-                        settings["location"],
-                        settings["hours_old"]
+                        search_term=settings["search_term"],
+                        location=settings["location"],
+                        hours_old=settings["hours_old"],
+                        exclude_age=settings["exclude_age"],
+                        custom_exclude=settings["custom_exclude"],
                     )
-                    st.caption("Copy this query and paste it into Google Jobs for more listings.")
+
+                    st.caption("Salin query ini dan tempelkan di Google Jobs untuk hasil tambahan.")
                     st.code(google_query, language="text")
+
                     encoded_query = urllib.parse.quote(google_query)
                     google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
-                    st.markdown(f"[🔗 Search on Google Jobs]({google_url})")
+                    st.markdown(f"[🔗 Cari di Google Jobs]({google_url})")
+
+                    if settings["exclude_age"]:
+                        st.caption("✅ Filter usia aktif: -usia -age -umur")
+                    if settings["custom_exclude"]:
+                        st.caption(f"✅ Pengecualian kustom aktif: {settings['custom_exclude']}")
 
 # ==================== TAB 2: PLAYBOOK ====================
 with tab2:
-    st.title("📖 Job Search Playbook")
-    st.markdown("**Practical techniques to find valid job information using Google Search.**")
+    st.title("📖 Panduan Pencarian Pekerjaan")
+    st.markdown("**Teknik praktis mencari informasi pekerjaan valid menggunakan Google Search.**")
 
-    with st.expander("🚀 Quick Start – Copy‑paste these keywords", expanded=True):
-        st.markdown("**1. General job search (Indonesia)**")
+    with st.expander("🚀 Mulai Cepat – Copy‑paste kata kunci ini", expanded=True):
+        st.markdown("**1. Pencarian umum (Indonesia)**")
         st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org)', language="text")
-        st.caption("💡 Add `-jobstreet` to exclude JobStreet.")
+        st.caption("💡 Tambahkan `-jobstreet` di akhir untuk mengecualikan JobStreet.")
 
-        st.markdown("**2. Specific city (Temanggung, Jateng)**")
+        st.markdown("**2. Kota spesifik (contoh: Temanggung, Jateng)**")
         st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") AND ("Temanggung" OR "Magelang" OR "Jawa Tengah") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org) -jobstreet', language="text")
 
-        st.markdown("**3. Surabaya – Gresik area**")
+        st.markdown("**3. Area Surabaya – Gresik**")
         st.code('intext:(recruitment OR rekrutmen OR karir OR lowongan OR career) AND (surabaya OR gresik)', language="text")
 
-    with st.expander("📍 Build your own location query"):
+    with st.expander("📍 Buat query lokasi sendiri"):
         col1, col2 = st.columns(2)
         with col1:
-            city = st.text_input("City", "Temanggung")
+            city = st.text_input("Kota", "Temanggung")
         with col2:
-            province = st.text_input("Province (optional)", "Jawa Tengah")
-        exclude = st.text_input("Exclude (e.g., jobstreet)", value="jobstreet")
-        if st.button("Generate Location Query", use_container_width=True):
+            province = st.text_input("Provinsi (opsional)", "Jawa Tengah")
+        exclude = st.text_input("Kata yang dikecualikan (contoh: jobstreet)", value="jobstreet")
+        if st.button("Buat Query Lokasi", use_container_width=True):
             base = f'("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy")'
             loc = f'("{city}"'
             if province:
@@ -434,10 +543,10 @@ with tab2:
             if exclude.strip():
                 query += f" -{exclude.strip()}"
             st.code(query, language="text")
-            st.markdown(f"[🔗 Search on Google](https://www.google.com/search?q={urllib.parse.quote(query)})")
+            st.markdown(f"[🔗 Cari di Google](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
-    with st.expander("🏢 Scan specific job portals (remote-friendly)"):
-        st.markdown("These portals often have remote-friendly companies.")
+    with st.expander("🏢 Scan portal pekerjaan spesifik (ramah remote)"):
+        st.markdown("Portal ini sering digunakan perusahaan dengan budaya baik dan ramah remote.")
         portals = [
             ("BambooHR", "inurl:bamboohr.com 'jobs/view' remote after:2026-05-01"),
             ("Greenhouse", "site:greenhouse.io Remote"),
@@ -449,13 +558,13 @@ with tab2:
         for name, query in portals:
             st.markdown(f"**{name}**")
             st.code(query, language="text")
-            st.markdown(f"[🔗 Search](https://www.google.com/search?q={urllib.parse.quote(query)})")
+            st.markdown(f"[🔗 Cari](https://www.google.com/search?q={urllib.parse.quote(query)})")
 
-    with st.expander("🔗 LinkedIn time filter (last 24 hours)"):
-        st.markdown("Change the number after `r` for different time windows (seconds).")
-        linkedin_location = st.text_input("LinkedIn location", "Surabaya")
-        linkedin_keyword = st.text_input("LinkedIn keyword", "hiring")
-        if st.button("Generate LinkedIn Link", use_container_width=True):
+    with st.expander("🔗 Filter waktu LinkedIn (24 jam terakhir)"):
+        st.markdown("Ubah angka setelah `r` untuk rentang waktu berbeda (dalam detik).")
+        linkedin_location = st.text_input("Lokasi LinkedIn", "Surabaya")
+        linkedin_keyword = st.text_input("Kata kunci LinkedIn", "hiring")
+        if st.button("Buat Link LinkedIn", use_container_width=True):
             base = "https://www.linkedin.com/jobs/search/"
             params = {
                 "keywords": f"{linkedin_keyword} {linkedin_location}",
@@ -466,32 +575,32 @@ with tab2:
             query_str = urllib.parse.urlencode(params)
             url = f"{base}?{query_str}"
             st.code(url, language="text")
-            st.markdown(f"[🔗 Open LinkedIn search]({url})")
-            st.caption("💡 Change `r86400` to `r172800` for 48h, `r43200` for 12h.")
+            st.markdown(f"[🔗 Buka LinkedIn]({url})")
+            st.caption("💡 Ganti `r86400` ke `r172800` untuk 48 jam, `r43200` untuk 12 jam.")
 
-    with st.expander("🤖 AI Helper – Generate keywords"):
-        st.markdown("Copy this prompt into ChatGPT, DeepSeek, or Meta AI.")
+    with st.expander("🤖 AI Helper – Buat kata kunci dengan ChatGPT / DeepSeek"):
+        st.markdown("Salin prompt ini dan tempelkan ke ChatGPT, DeepSeek, atau Meta AI.")
         prompt = """Buatkan kata kunci untuk mencari informasi pekerjaan bidang [your field] di [your location] lewat Google Search dengan teknik Google Dorking.
 
-Contoh output: 
+Contoh output:
 - site:indeed.co.id "GIS" "Indonesia" "job"
 - inurl:career "GIS" "Indonesia" "vacancy"
 - filetype:pdf "Lowongan Kerja GIS" "Indonesia"
 
 Buatkan 5–10 variasi dengan operator yang berbeda."""
         st.code(prompt, language="text")
-        st.caption("💡 Replace bracketed parts with your own field and location.")
+        st.caption("💡 Ganti bagian dalam kurung siku dengan bidang dan lokasi Anda.")
 
-    with st.expander("🌐 Community & Free Tools"):
-        st.markdown("**Join the community**")
+    with st.expander("🌐 Komunitas & Alat Gratis"):
+        st.markdown("**Gabung komunitas**")
         st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
 
-        st.markdown("**Free CV & job tracking tool**")
+        st.markdown("**Alat CV & tracking lamaran gratis**")
         st.markdown("[jobresume.rndhri.com](https://jobresume.rndhri.com/)")
 
-        st.markdown("**WEF Future of Jobs Report 2025**")
+        st.markdown("**Laporan WEF Future of Jobs Report 2025**")
         st.markdown("[Download PDF](https://www.weforum.org/publications/the-future-of-jobs-report-2025/)")
-        st.markdown("**AI prompt to summarise:**")
+        st.markdown("**Prompt AI untuk meringkas laporan:**")
         summarise_prompt = """Ringkaskan laporan Future of Jobs Report 2025 dari World Economic Forum dalam bahasa Indonesia. Fokus pada:
 - Sektor yang paling banyak menambah lapangan kerja
 - Sektor yang paling banyak mengurangi lapangan kerja
@@ -501,14 +610,14 @@ Buat ringkasan 2–3 paragraf yang mudah dipahami."""
         st.code(summarise_prompt, language="text")
 
         st.markdown("---")
-        st.markdown("**Share your own tip**")
-        tip = st.text_area("Your tip (for the community)")
-        if st.button("Submit Tip", use_container_width=True):
-            st.success("Thank you! Your tip has been recorded.")
+        st.markdown("**Bagikan tips Anda**")
+        tip = st.text_area("Tips Anda (untuk komunitas)")
+        if st.button("Kirim Tips", use_container_width=True):
+            st.success("Terima kasih! Tips Anda telah dicatat.")
 
 # ==================== FOOTER ====================
 st.markdown("---")
 st.markdown(
-    "Powered by [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
-    "Built for job seekers who refuse to give up."
+    "Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
+    "dibuat untuk pencari kerja yang tidak menyerah."
 )
