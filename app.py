@@ -8,24 +8,45 @@ import streamlit as st
 from jobspy import scrape_jobs
 from jobspy.model import Country
 
+# ----------------------------------------------------------------------
+# Page Config
+# ----------------------------------------------------------------------
 st.set_page_config(
-    page_title="Job Search Scraper",
+    page_title="Cari Kerja",
     page_icon="🔎",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # ----------------------------------------------------------------------
-# Custom CSS for better mobile experience
+# Custom CSS for Mobile-Friendly & Polished UI
 # ----------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* Larger touch targets on mobile */
+    /* ===== WARMER THEME ===== */
+    .stApp {
+        background-color: #fefcf7;
+    }
+    .main > div {
+        background-color: #fefcf7;
+    }
+    
+    /* ===== LARGER TOUCH TARGETS (Mobile) ===== */
     @media (max-width: 768px) {
         .stButton button {
             font-size: 18px !important;
             padding: 0.75rem 1.5rem !important;
             min-height: 50px !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+            color: white !important;
+            font-weight: 600 !important;
+            border: none !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3) !important;
+        }
+        .stButton button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4) !important;
         }
         .stCheckbox label {
             font-size: 16px !important;
@@ -33,91 +54,333 @@ st.markdown("""
         .stTextInput input {
             font-size: 16px !important;
             min-height: 44px !important;
+            border-radius: 10px !important;
+            border: 1px solid #e5e7eb !important;
+        }
+        .stTextInput input:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
         }
         .stSelectbox select {
             font-size: 16px !important;
             min-height: 44px !important;
+            border-radius: 10px !important;
         }
         .stNumberInput input {
             font-size: 16px !important;
             min-height: 44px !important;
+            border-radius: 10px !important;
         }
         .stExpander {
             margin-bottom: 8px !important;
+            border-radius: 12px !important;
+            border: 1px solid #f0eee9 !important;
         }
         .stCodeBlock {
             max-height: 300px !important;
             overflow-y: auto !important;
+            border-radius: 10px !important;
         }
-        /* Sticky search button on mobile */
-        .sticky-search {
-            position: sticky;
+        /* Sticky search bar */
+        .sticky-search-bar {
+            position: fixed;
             bottom: 0;
-            background: white;
-            padding: 12px 0;
-            z-index: 100;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            left: 0;
+            right: 0;
+            background: rgba(254, 252, 247, 0.95);
+            backdrop-filter: blur(8px);
+            padding: 12px 16px 20px 16px;
+            z-index: 1000;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
+            border-top: 1px solid rgba(229, 231, 235, 0.5);
         }
-        /* Dua card styling */
+        .sticky-search-bar .stButton button {
+            width: 100% !important;
+            font-size: 18px !important;
+            padding: 14px !important;
+        }
+        /* Filter chips */
+        .filter-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 12px 0 16px 0;
+        }
+        .filter-chip {
+            background: #eef2ff;
+            color: #1e40af;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #c7d2fe;
+        }
+        .filter-chip-remove {
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #93c5fd;
+        }
+        /* Dua card */
         .dua-card {
-            background: #f8f9fa;
-            border-radius: 12px;
+            background: linear-gradient(135deg, #f0f7ff, #e8f0fe);
+            border-radius: 16px;
             padding: 20px;
             margin: 16px 0;
-            border-right: 4px solid #2e7d32;
+            border-right: 4px solid #2563eb;
+            border-left: 1px solid rgba(37, 99, 235, 0.1);
         }
         .dua-card p {
             font-size: 18px;
             line-height: 1.8;
             color: #1a1a1a;
+            font-style: italic;
         }
         .dua-card .attribution {
             font-size: 14px;
-            color: #555;
-            font-style: italic;
+            color: #4b5563;
+            font-style: normal;
+            margin-top: 8px;
+        }
+        /* Language toggle */
+        .lang-toggle {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 8px;
+        }
+        .lang-toggle button {
+            background: transparent !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 20px !important;
+            padding: 4px 16px !important;
+            font-size: 14px !important;
+            min-height: 32px !important;
+            color: #374151 !important;
+            box-shadow: none !important;
+        }
+        .lang-toggle button:hover {
+            background: #f3f4f6 !important;
+            transform: none !important;
+        }
+        .lang-toggle .active-lang {
+            background: #2563eb !important;
+            color: white !important;
+            border-color: #2563eb !important;
+        }
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .empty-state .emoji {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        .empty-state h3 {
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        .empty-state p {
+            color: #6b7280;
+            max-width: 400px;
+            margin: 0 auto 16px auto;
+        }
+        .empty-state .suggestions {
+            text-align: left;
+            max-width: 320px;
+            margin: 0 auto;
+            background: #f9fafb;
+            padding: 16px 20px;
+            border-radius: 12px;
+        }
+        .empty-state .suggestions li {
+            color: #374151;
+            margin-bottom: 6px;
+            list-style-type: none;
+        }
+        .empty-state .suggestions li::before {
+            content: "• ";
+            color: #2563eb;
+            font-weight: bold;
         }
     }
-    /* Desktop styles for dua card */
-    .dua-card {
-        background: #f8f9fa;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 16px 0;
-        border-right: 4px solid #2e7d32;
-    }
-    .dua-card p {
-        font-size: 20px;
-        line-height: 1.8;
-        color: #1a1a1a;
-    }
-    .dua-card .attribution {
-        font-size: 14px;
-        color: #555;
-        font-style: italic;
-        margin-top: 8px;
+    /* ===== DESKTOP OVERRIDES ===== */
+    @media (min-width: 769px) {
+        .sticky-search-bar {
+            display: none !important;
+        }
+        .stButton button {
+            border-radius: 10px !important;
+        }
+        .dua-card p {
+            font-size: 20px !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------
-# Configuration
+# Language Translations (ID/EN)
 # ----------------------------------------------------------------------
-ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]
-DEFAULT_SITES = ["indeed", "linkedin"]
-MAX_RETRIES = 2
-RETRY_DELAY_SECONDS = 3
-PER_SITE_TIMEOUT_SECONDS = 60
-
-PERMANENT_BLOCK_MARKERS = ("403", "cf-waf", "forbidden", "cloudflare", "just a moment")
+LANG = {
+    "id": {
+        "app_title": "🔎 Cari Kerja",
+        "app_caption": "Mencari dari LinkedIn, Indeed, ZipRecruiter, dan Glassdoor. Google tidak discrap — kami berikan saran pencarian manual.",
+        "search_settings": "🔧 Pengaturan Pencarian",
+        "search_settings_desc": "Atur parameter pencarian di sini.",
+        "keyword": "Kata kunci pekerjaan (opsional)",
+        "keyword_help": "Kosongkan untuk mencari semua postingan.",
+        "location": "Lokasi (opsional)",
+        "location_help": "Kosongkan untuk pencarian lebih luas (cocok untuk remote).",
+        "location_empty": "💡 Lokasi kosong → pencarian lebih luas.",
+        "country": "Negara (Indeed/Glassdoor)",
+        "country_help": "Contoh: Indonesia, USA, Singapore, Malaysia.",
+        "results": "Hasil per situs",
+        "hours": "Diposting dalam (jam)",
+        "hours_help": "0 = tidak ada filter.",
+        "select_sites": "Pilih situs pekerjaan",
+        "glassdoor_disabled": "⚠️ Glassdoor dinonaktifkan — tidak tersedia untuk '{country}'.",
+        "ziprecruiter_note": "⚠️ zip_recruiter hanya mencakup US/Canada.",
+        "google_suggestion": "✨ Tampilkan saran pencarian Google manual setelah scraping",
+        "google_help": "Google tidak discrap — kami akan buatkan query yang bisa Anda gunakan secara manual.",
+        "google_extra": "🔍 Pengaturan tambahan untuk pencarian Google manual",
+        "age_filter": "Hilangkan listing yang sebut usia (-usia -age -umur)",
+        "age_filter_help": "Hanya untuk pencarian Google manual, tidak mempengaruhi hasil scraper.",
+        "custom_exclude": "Tambahkan kata kunci yang ingin dikecualikan (pisahkan dengan spasi)",
+        "custom_exclude_placeholder": "Contoh: fresh graduate entry level",
+        "custom_exclude_help": "Kata kunci akan ditambahkan tanda minus (-) secara otomatis.",
+        "search_button": "🔍 Cari Pekerjaan",
+        "searching": "🔍 Mencari di **{site}**...",
+        "searching_progress": "⏳ Mencari... ({current}/{total})",
+        "searching_dua": "⏳ Sedang mencari... semoga dimudahkan.",
+        "per_site_results": "📊 Hasil per situs",
+        "per_site_ok": "✅ **{site}**: {count} pekerjaan ditemukan",
+        "per_site_empty": "⚠️ **{site}**: tidak ada pekerjaan ditemukan",
+        "per_site_error": "❌ **{site}**: gagal — {error}",
+        "no_jobs": "Tidak ada pekerjaan ditemukan. Coba ubah filter, atau buka tab Panduan Pencarian untuk teknik manual.",
+        "no_jobs_valid": "Ditemukan {raw} hasil mentah, tapi tidak ada yang lolos validasi. Coba longgarkan filter.",
+        "jobs_found": "✅ Ditemukan {count} pekerjaan valid dari {sites} situs",
+        "jobs_filtered": " — {filtered} difilter (tidak lengkap, duplikat, atau sudah kadaluwarsa)",
+        "download_csv": "📥 Download CSV",
+        "google_manual": "🔍 Ekstra: Pencarian Manual Google Jobs",
+        "google_manual_desc": "Salin query ini dan tempelkan di Google Jobs untuk hasil tambahan.",
+        "google_search_link": "🔗 Cari di Google Jobs",
+        "age_active": "✅ Filter usia aktif: -usia -age -umur",
+        "custom_active": "✅ Pengecualian kustom aktif: {exclude}",
+        "empty_title": "Belum ada pekerjaan ditemukan",
+        "empty_desc": "Coba beberapa saran di bawah ini untuk memperluas pencarian:",
+        "empty_suggest_1": "Coba lokasi yang lebih luas (atau kosongkan)",
+        "empty_suggest_2": "Coba kata kunci yang berbeda atau lebih umum",
+        "empty_suggest_3": "Kurangi filter jam (misal: dari 72 jam ke 168 jam)",
+        "empty_suggest_4": "Lihat Panduan Pencarian untuk teknik manual",
+        "filter_location": "📍 {location}",
+        "filter_hours": "⏰ {hours}h",
+        "filter_keyword": "🔍 {keyword}",
+        "filter_age": "🚫 usia",
+        "filter_custom": "🚫 {word}",
+        "playbook_tab": "📖 Panduan Pencarian",
+        "search_tab": "🔍 Cari Pekerjaan",
+        "footer": "Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — dibuat untuk pencari kerja yang tidak menyerah.",
+        "lang_en": "English",
+        "lang_id": "Indonesia"
+    },
+    "en": {
+        "app_title": "🔎 Job Search",
+        "app_caption": "Searching LinkedIn, Indeed, ZipRecruiter, and Glassdoor. Google is not scraped — we provide a manual search suggestion.",
+        "search_settings": "🔧 Search Settings",
+        "search_settings_desc": "Configure your search parameters here.",
+        "keyword": "Job title / keywords (optional)",
+        "keyword_help": "Leave blank to get all postings.",
+        "location": "Location (optional)",
+        "location_help": "Leave empty for broader search (good for remote).",
+        "location_empty": "💡 Location empty → broader search.",
+        "country": "Country (Indeed/Glassdoor)",
+        "country_help": "Example: Indonesia, USA, Singapore, Malaysia.",
+        "results": "Results per site",
+        "hours": "Posted within (hours)",
+        "hours_help": "0 = no filter.",
+        "select_sites": "Select job sites",
+        "glassdoor_disabled": "⚠️ Glassdoor disabled — not available for '{country}'.",
+        "ziprecruiter_note": "⚠️ zip_recruiter only covers US/Canada.",
+        "google_suggestion": "✨ Show Google manual search suggestion after scraping",
+        "google_help": "Google is not scraped — we'll build a query you can use manually.",
+        "google_extra": "🔍 Additional settings for manual Google search",
+        "age_filter": "Exclude listings mentioning age (-usia -age -umur)",
+        "age_filter_help": "Only for manual Google search, does not affect scraper results.",
+        "custom_exclude": "Add keywords to exclude (separate with space)",
+        "custom_exclude_placeholder": "Example: fresh graduate entry level",
+        "custom_exclude_help": "Keywords will automatically get a minus (-) prefix.",
+        "search_button": "🔍 Search Jobs",
+        "searching": "🔍 Searching **{site}**...",
+        "searching_progress": "⏳ Searching... ({current}/{total})",
+        "searching_dua": "⏳ Searching... may it be made easy.",
+        "per_site_results": "📊 Per-site results",
+        "per_site_ok": "✅ **{site}**: {count} jobs found",
+        "per_site_empty": "⚠️ **{site}**: no jobs found",
+        "per_site_error": "❌ **{site}**: failed — {error}",
+        "no_jobs": "No jobs found. Try different filters, or check the Playbook tab for manual techniques.",
+        "no_jobs_valid": "Found {raw} raw results, but none passed validation. Try loosening filters.",
+        "jobs_found": "✅ Found {count} valid jobs across {sites} site(s)",
+        "jobs_filtered": " — {filtered} filtered out (incomplete, duplicate, or expired)",
+        "download_csv": "📥 Download CSV",
+        "google_manual": "🔍 Extra: Google Jobs Manual Search",
+        "google_manual_desc": "Copy this query and paste it into Google Jobs for more listings.",
+        "google_search_link": "🔗 Search on Google Jobs",
+        "age_active": "✅ Age filter active: -usia -age -umur",
+        "custom_active": "✅ Custom exclusions active: {exclude}",
+        "empty_title": "No jobs found yet",
+        "empty_desc": "Try these suggestions to broaden your search:",
+        "empty_suggest_1": "Try a wider location (or leave it empty)",
+        "empty_suggest_2": "Try different or more general keywords",
+        "empty_suggest_3": "Reduce the hours filter (e.g., from 72h to 168h)",
+        "empty_suggest_4": "Check the Playbook tab for manual techniques",
+        "filter_location": "📍 {location}",
+        "filter_hours": "⏰ {hours}h",
+        "filter_keyword": "🔍 {keyword}",
+        "filter_age": "🚫 age",
+        "filter_custom": "🚫 {word}",
+        "playbook_tab": "📖 Job Search Playbook",
+        "search_tab": "🔍 Search Jobs",
+        "footer": "Powered by [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — built for job seekers who refuse to give up.",
+        "lang_en": "English",
+        "lang_id": "Indonesia"
+    }
+}
 
 # ----------------------------------------------------------------------
-# Helper functions
+# Initialize Session State
+# ----------------------------------------------------------------------
+if "lang" not in st.session_state:
+    st.session_state.lang = "id"
+if "search_clicked" not in st.session_state:
+    st.session_state.search_clicked = False
+if "settings" not in st.session_state:
+    st.session_state.settings = {}
+
+def t(key: str, **kwargs) -> str:
+    """Get translated text."""
+    text = LANG[st.session_state.lang].get(key, key)
+    if kwargs:
+        return text.format(**kwargs)
+    return text
+
+# ----------------------------------------------------------------------
+# Helper functions (unchanged)
 # ----------------------------------------------------------------------
 def is_permanent_block(error_msg: str) -> bool:
     if not error_msg:
         return False
     lowered = error_msg.lower()
-    return any(marker in lowered for marker in PERMANENT_BLOCK_MARKERS)
+    return any(marker in lowered for marker in ("403", "cf-waf", "forbidden", "cloudflare", "just a moment"))
 
 def glassdoor_supports_country(country_str: str) -> bool:
     try:
@@ -133,7 +396,6 @@ def build_google_search_term(
     exclude_age: bool = False,
     custom_exclude: str = "",
 ) -> str:
-    """Build the query Google Jobs expects, with optional exclusions."""
     term = search_term.strip() if search_term and search_term.strip() else ""
     if not term:
         term = "jobs"
@@ -151,11 +413,9 @@ def build_google_search_term(
         elif hours_old <= 24 * 30:
             term += " this month"
 
-    # Age exclusions
     if exclude_age:
         term += " -usia -age -umur"
 
-    # Custom exclusions (app adds - automatically)
     if custom_exclude and custom_exclude.strip():
         for word in custom_exclude.strip().split():
             if word.strip():
@@ -187,21 +447,21 @@ def scrape_one_site(site: str, **kwargs_inputs) -> tuple[pd.DataFrame | None, st
     last_error = None
     kwargs = build_kwargs_for_site(site, **kwargs_inputs)
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, 3):  # MAX_RETRIES = 2
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(scrape_jobs, **kwargs)
-                df = future.result(timeout=PER_SITE_TIMEOUT_SECONDS)
+                df = future.result(timeout=60)
             return df, None
         except FutureTimeoutError:
-            last_error = f"timed out after {PER_SITE_TIMEOUT_SECONDS}s"
+            last_error = f"timed out after 60s"
         except Exception as e:
             last_error = str(e)
             if is_permanent_block(last_error):
                 break
 
-        if attempt < MAX_RETRIES:
-            time.sleep(RETRY_DELAY_SECONDS)
+        if attempt < 2:
+            time.sleep(3)
 
     return None, last_error
 
@@ -241,92 +501,91 @@ def dedupe_cross_site(jobs: pd.DataFrame) -> pd.DataFrame:
 # Render Search Settings (mobile-friendly expander)
 # ----------------------------------------------------------------------
 def render_search_settings():
-    """Render search settings in a collapsible expander (mobile-friendly)"""
-    with st.expander("🔧 Pengaturan Pencarian", expanded=not st.session_state.get("search_clicked", False)):
-        st.caption("Atur parameter pencarian di sini.")
+    with st.expander(t("search_settings"), expanded=not st.session_state.get("search_clicked", False)):
+        st.caption(t("search_settings_desc"))
 
         col1, col2 = st.columns(2)
 
         with col1:
             search_term = st.text_input(
-                "Kata kunci pekerjaan (opsional)",
+                t("keyword"),
                 value="",
-                help="Kosongkan untuk mencari semua postingan."
+                help=t("keyword_help")
             )
             location = st.text_input(
-                "Lokasi (opsional)",
+                t("location"),
                 value="",
-                help="Kosongkan untuk pencarian lebih luas (cocok untuk remote)."
+                help=t("location_help")
             )
             if not location:
-                st.caption("💡 Lokasi kosong → pencarian lebih luas.")
+                st.caption(t("location_empty"))
 
         with col2:
             country_indeed = st.text_input(
-                "Negara (Indeed/Glassdoor)",
+                t("country"),
                 value="Indonesia",
-                help="Contoh: Indonesia, USA, Singapore, Malaysia."
+                help=t("country_help")
             )
-            results_wanted = st.slider("Hasil per situs", min_value=5, max_value=100, value=20, step=5)
+            results_wanted = st.slider(t("results"), min_value=5, max_value=100, value=20, step=5)
             hours_old = st.number_input(
-                "Diposting dalam (jam)",
+                t("hours"),
                 min_value=0,
                 value=72,
                 step=24,
-                help="0 = tidak ada filter."
+                help=t("hours_help")
             )
 
-        st.caption("Pilih situs pekerjaan")
+        st.caption(t("select_sites"))
         glassdoor_ok = glassdoor_supports_country(country_indeed)
         sites = []
         cols = st.columns(3)
-        for i, site in enumerate(ALL_SITES):
+        for i, site in enumerate(["indeed", "linkedin", "zip_recruiter", "glassdoor"]):
             col = cols[i % 3]
             if site == "glassdoor" and not glassdoor_ok:
                 col.checkbox(
                     "glassdoor 🚫",
                     value=False,
                     disabled=True,
-                    help=f"Tidak tersedia untuk '{country_indeed}'.",
+                    help=t("glassdoor_disabled", country=country_indeed),
                     key="site_glassdoor",
                 )
             else:
-                checked = col.checkbox(site, value=(site in DEFAULT_SITES), key=f"site_{site}")
+                checked = col.checkbox(site, value=(site in ["indeed", "linkedin"]), key=f"site_{site}")
                 if checked:
                     sites.append(site)
 
         if not glassdoor_ok:
-            st.caption(f"⚠️ Glassdoor dinonaktifkan — tidak tersedia untuk '{country_indeed}'.")
-        st.caption("⚠️ zip_recruiter hanya mencakup US/Canada.")
+            st.caption(t("glassdoor_disabled", country=country_indeed))
+        st.caption(t("ziprecruiter_note"))
 
         # Google manual suggestion
         google_enabled = st.checkbox(
-            "✨ Tampilkan saran pencarian Google manual setelah scraping",
+            t("google_suggestion"),
             value=False,
-            help="Google tidak discrap — kami akan buatkan query yang bisa Anda gunakan secara manual."
+            help=t("google_help")
         )
 
-        # Google extra settings (only shown when google_enabled is checked)
         exclude_age = False
         custom_exclude = ""
         if google_enabled:
             st.markdown("---")
-            st.caption("🔍 Pengaturan tambahan untuk pencarian Google manual")
+            st.caption(t("google_extra"))
 
             exclude_age = st.checkbox(
-                "Hilangkan listing yang sebut usia (-usia -age -umur)",
+                t("age_filter"),
                 value=False,
-                help="Hanya untuk pencarian Google manual, tidak mempengaruhi hasil scraper."
+                help=t("age_filter_help")
             )
 
             custom_exclude = st.text_input(
-                "Tambahkan kata kunci yang ingin dikecualikan (pisahkan dengan spasi)",
+                t("custom_exclude"),
                 value="",
-                placeholder="Contoh: fresh graduate entry level",
-                help="Kata kunci akan ditambahkan tanda minus (-) secara otomatis."
+                placeholder=t("custom_exclude_placeholder"),
+                help=t("custom_exclude_help")
             )
 
-        return {
+        # Save settings to session state
+        st.session_state.settings = {
             "search_term": search_term,
             "location": location,
             "country_indeed": country_indeed,
@@ -338,30 +597,94 @@ def render_search_settings():
             "custom_exclude": custom_exclude,
         }
 
+        return st.session_state.settings
+
+# ==================== LANGUAGE TOGGLE ====================
+def render_lang_toggle():
+    col1, col2, col3 = st.columns([1, 5, 1])
+    with col3:
+        if st.button("🇮🇩 ID" if st.session_state.lang == "en" else "🇬🇧 EN", key="lang_toggle"):
+            st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
+            st.rerun()
+
+# ==================== FILTER CHIPS ====================
+def render_filter_chips(settings):
+    chips = []
+    if settings.get("location") and settings["location"].strip():
+        chips.append(t("filter_location", location=settings["location"]))
+    if settings.get("hours_old") and settings["hours_old"] > 0:
+        chips.append(t("filter_hours", hours=settings["hours_old"]))
+    if settings.get("search_term") and settings["search_term"].strip():
+        chips.append(t("filter_keyword", keyword=settings["search_term"][:30]))
+    if settings.get("exclude_age"):
+        chips.append(t("filter_age"))
+    if settings.get("custom_exclude") and settings["custom_exclude"].strip():
+        for word in settings["custom_exclude"].strip().split()[:2]:
+            chips.append(t("filter_custom", word=word))
+
+    if chips:
+        html = '<div class="filter-chips">'
+        for chip in chips:
+            html += f'<span class="filter-chip">{chip}</span>'
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
+
+# ==================== EMPTY STATE ====================
+def render_empty_state():
+    st.markdown(f"""
+    <div class="empty-state">
+        <div class="emoji">🔍</div>
+        <h3>{t("empty_title")}</h3>
+        <p>{t("empty_desc")}</p>
+        <div class="suggestions">
+            <li>{t("empty_suggest_1")}</li>
+            <li>{t("empty_suggest_2")}</li>
+            <li>{t("empty_suggest_3")}</li>
+            <li>{t("empty_suggest_4")}</li>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==================== DUA CARD ====================
+def render_dua_card():
+    st.markdown("""
+    <div class="dua-card">
+        <p>
+            "Barang siapa memperbanyak istighfar; niscaya Allah memberikan jalan keluar bagi setiap kesedihannya, kelapangan untuk setiap kesempitannya dan rizki dari arah yang tidak disangka-sangka."
+        </p>
+        <div class="attribution">— HR. Ahmad dari Ibnu Abbas</div>
+    </div>
+    <div class="dua-card">
+        <p>
+            "Aku (Nabi Nuh) berkata (pada mereka), 'Beristighfarlah kepada Rabb kalian, sungguh Dia Maha Pengampun. Niscaya Dia akan menurunkan kepada kalian hujan yang lebat dari langit. Dan Dia akan memperbanyak harta serta anak-anakmu, juga mengadakan kebun-kebun dan sungai-sungai untukmu.'"
+        </p>
+        <div class="attribution">— QS. Nuh: 10-12</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ==================== TAB 1: SEARCH ====================
-tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
+tab1, tab2 = st.tabs([t("search_tab"), t("playbook_tab")])
 
 with tab1:
-    st.caption(
-        "🔎 Mencari dari LinkedIn, Indeed, ZipRecruiter, dan Glassdoor. "
-        "**Google tidak discrap** — kami berikan saran pencarian manual sebagai gantinya."
-    )
+    render_lang_toggle()
 
-    # Mobile-friendly: search settings in expander (not sidebar)
+    st.caption(t("app_caption"))
+
+    # Mobile-friendly: search settings in expander
     settings = render_search_settings()
 
-    # Sticky search button (mobile-friendly)
+    # Search button (main)
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
         search_clicked = st.button(
-            "🔍 Cari Pekerjaan",
+            t("search_button"),
             type="primary",
             use_container_width=True,
-            key="search_button"
+            key="search_button_main"
         )
 
     if search_clicked:
-        st.session_state["search_clicked"] = True
+        st.session_state.search_clicked = True
 
     # ===== MAIN SEARCH LOGIC =====
     if search_clicked:
@@ -380,32 +703,18 @@ with tab1:
 
         all_dfs = []
         site_status = {}
+        total_sites = len(sites)
+
+        # ---- DUA CARD + PROGRESS ----
+        render_dua_card()
+
         status_area = st.empty()
+        progress_area = st.empty()
 
-        # ---- DUA CARD ----
-        st.markdown("""
-        <div class="dua-card">
-            <p>
-                "Barang siapa memperbanyak istighfar; niscaya Allah memberikan jalan keluar bagi setiap kesedihannya, kelapangan untuk setiap kesempitannya dan rizki dari arah yang tidak disangka-sangka."
-            </p>
-            <div class="attribution">— HR. Ahmad dari Ibnu Abbas</div>
-        </div>
-        """, unsafe_allow_html=True)
+        for idx, site in enumerate(sites):
+            progress_area.caption(t("searching_progress", current=idx+1, total=total_sites))
+            status_area.info(t("searching", site=site))
 
-        st.markdown("""
-        <div class="dua-card">
-            <p>
-                "Aku (Nabi Nuh) berkata (pada mereka), 'Beristighfarlah kepada Rabb kalian, sungguh Dia Maha Pengampun. Niscaya Dia akan menurunkan kepada kalian hujan yang lebat dari langit. Dan Dia akan memperbanyak harta serta anak-anakmu, juga mengadakan kebun-kebun dan sungai-sungai untukmu.'"
-            </p>
-            <div class="attribution">— QS. Nuh: 10-12</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.caption("⏳ Sedang mencari... semoga dimudahkan.")
-
-        # ---- Scraping loop with progress ----
-        for site in sites:
-            status_area.info(f"🔍 Mencari di **{site}**...")
             df, err = scrape_one_site(site, **common_inputs)
             if err:
                 site_status[site] = ("error", err)
@@ -416,24 +725,10 @@ with tab1:
                 all_dfs.append(df)
 
         status_area.empty()
+        progress_area.empty()
 
-        # ---- Results ----
-        with st.expander("📊 Hasil per situs", expanded=True):
-            for site in sites:
-                kind, info = site_status[site]
-                if kind == "ok":
-                    st.success(f"✅ **{site}**: {info} pekerjaan ditemukan")
-                elif kind == "empty":
-                    st.warning(f"⚠️ **{site}**: tidak ada pekerjaan ditemukan")
-                else:
-                    st.error(f"❌ **{site}**: gagal — {info}")
-
-        if not all_dfs:
-            st.warning(
-                "Tidak ada pekerjaan ditemukan. Coba ubah filter, atau buka tab "
-                "Panduan Pencarian untuk teknik manual."
-            )
-        else:
+        # ---- RESULTS ----
+        if all_dfs:
             jobs = pd.concat(all_dfs, ignore_index=True)
             if "job_url" in jobs.columns:
                 jobs = jobs.drop_duplicates(subset="job_url")
@@ -444,10 +739,29 @@ with tab1:
             filtered_count = raw_count - len(jobs)
 
             if jobs.empty:
-                st.warning(
-                    f"Ditemukan {raw_count} hasil mentah, tapi tidak ada yang lolos validasi. Coba longgarkan filter."
-                )
+                st.warning(t("no_jobs_valid", raw=raw_count))
+                render_empty_state()
             else:
+                # ---- FILTER CHIPS ----
+                render_filter_chips(settings)
+
+                # ---- PER-SITE RESULTS ----
+                with st.expander(t("per_site_results"), expanded=True):
+                    for site in sites:
+                        kind, info = site_status[site]
+                        if kind == "ok":
+                            st.success(t("per_site_ok", site=site, count=info))
+                        elif kind == "empty":
+                            st.warning(t("per_site_empty", site=site))
+                        else:
+                            st.error(t("per_site_error", site=site, error=info))
+
+                # ---- JOB DATA ----
+                summary = t("jobs_found", count=len(jobs), sites=len(all_dfs))
+                if filtered_count:
+                    summary += t("jobs_filtered", filtered=filtered_count)
+                st.success(summary)
+
                 # Company career column
                 if "company_url" in jobs.columns:
                     jobs["company_career"] = jobs["company_url"].fillna("")
@@ -456,12 +770,6 @@ with tab1:
                 else:
                     jobs["company_career"] = jobs["company"].astype(str) + " " + jobs["title"].astype(str)
 
-                summary = f"✅ Ditemukan {len(jobs)} pekerjaan valid dari {len(all_dfs)} situs"
-                if filtered_count:
-                    summary += f" — {filtered_count} difilter (tidak lengkap, duplikat, atau sudah kadaluwarsa)"
-                st.success(summary)
-
-                # Show essential columns first
                 preferred_cols = ["site", "title", "company", "location", "job_type", "is_remote", "date_posted", "job_url", "company_career"]
                 existing_preferred = [c for c in preferred_cols if c in jobs.columns]
                 other_cols = [c for c in jobs.columns if c not in existing_preferred]
@@ -469,7 +777,7 @@ with tab1:
 
                 st.dataframe(jobs_display, width="stretch", hide_index=True)
 
-                # CSV download
+                # ---- CSV DOWNLOAD ----
                 loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] and settings["location"].strip() else "anywhere"
                 search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] and settings["search_term"].strip() else "all_jobs"
                 timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
@@ -477,17 +785,17 @@ with tab1:
 
                 csv = jobs.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "📥 Download CSV",
+                    t("download_csv"),
                     data=csv,
                     file_name=csv_filename,
                     mime="text/csv",
                     use_container_width=True,
                 )
 
-                # Google manual suggestion (only if enabled)
+                # ---- GOOGLE MANUAL SUGGESTION ----
                 if settings["google_enabled"]:
                     st.divider()
-                    st.subheader("🔍 Ekstra: Pencarian Manual Google Jobs")
+                    st.subheader(t("google_manual"))
 
                     google_query = build_google_search_term(
                         search_term=settings["search_term"],
@@ -497,17 +805,48 @@ with tab1:
                         custom_exclude=settings["custom_exclude"],
                     )
 
-                    st.caption("Salin query ini dan tempelkan di Google Jobs untuk hasil tambahan.")
+                    st.caption(t("google_manual_desc"))
                     st.code(google_query, language="text")
 
                     encoded_query = urllib.parse.quote(google_query)
                     google_url = f"https://www.google.com/search?q={encoded_query}&ibp=htl;jobs"
-                    st.markdown(f"[🔗 Cari di Google Jobs]({google_url})")
+                    st.markdown(f"[{t('google_search_link')}]({google_url})")
 
                     if settings["exclude_age"]:
-                        st.caption("✅ Filter usia aktif: -usia -age -umur")
+                        st.caption(t("age_active"))
                     if settings["custom_exclude"]:
-                        st.caption(f"✅ Pengecualian kustom aktif: {settings['custom_exclude']}")
+                        st.caption(t("custom_active", exclude=settings["custom_exclude"]))
+
+        else:
+            # ---- NO JOBS FROM ANY SITE ----
+            with st.expander(t("per_site_results"), expanded=True):
+                for site in sites:
+                    kind, info = site_status[site]
+                    if kind == "ok":
+                        st.success(t("per_site_ok", site=site, count=info))
+                    elif kind == "empty":
+                        st.warning(t("per_site_empty", site=site))
+                    else:
+                        st.error(t("per_site_error", site=site, error=info))
+
+            st.warning(t("no_jobs"))
+            render_empty_state()
+
+    # ---- STICKY SEARCH BAR (Mobile only) ----
+    # Always show after search or when no search yet
+    if not search_clicked or st.session_state.search_clicked:
+        st.markdown("""
+        <div class="sticky-search-bar">
+        """, unsafe_allow_html=True)
+        col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
+        with col_s2:
+            st.button(
+                t("search_button"),
+                type="primary",
+                use_container_width=True,
+                key="search_button_sticky"
+            )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== TAB 2: PLAYBOOK ====================
 with tab2:
@@ -617,7 +956,4 @@ Buat ringkasan 2–3 paragraf yang mudah dipahami."""
 
 # ==================== FOOTER ====================
 st.markdown("---")
-st.markdown(
-    "Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — "
-    "dibuat untuk pencari kerja yang tidak menyerah."
-)
+st.markdown(t("footer"))
