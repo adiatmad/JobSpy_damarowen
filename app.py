@@ -24,9 +24,15 @@ inject_custom_css()
 ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]
 DEFAULT_SITES = ["indeed", "linkedin"]
 
+# --- INISIALISASI SESSION STATE ---
+if "raw_jobs" not in st.session_state:
+    st.session_state.raw_jobs = pd.DataFrame()
+if "search_executed" not in st.session_state:
+    st.session_state.search_executed = False
+
 # --- HELPER UI: EXPANDER PENGATURAN ---
 def render_search_settings():
-    with st.expander("🔧 Pengaturan & Filter Pencarian", expanded=not st.session_state.get("search_clicked", False)):
+    with st.expander("🔧 Pengaturan & Filter Pencarian", expanded=not st.session_state.search_executed):
         st.caption("Atur kata kunci, lokasi, dan filter kecocokan skill kamu di sini.")
 
         col1, col2 = st.columns(2)
@@ -94,10 +100,13 @@ with st.expander("❓ **Petunjuk Penggunaan (Klik Untuk Membaca)**", expanded=Fa
     2. Masukkan posisi yang dicari (misal: `Data Analyst`) dan lokasi (`Indonesia`).
     3. Masukkan **Target Skill** kamu (misal: `Python, SQL`). Aplikasi akan menghitung persen kecocokan (Match Score).
     4. Klik tombol **🔍 Cari Pekerjaan**.
-    5. **Fitur Otomatis:**
+    5. **Fitur Otomatis & Filter Real-Time:**
        - 🧹 **Anti-Duplikat:** Posisi sama dari platform berbeda otomatis digabung.
        - ⚡ **Quick Apply (ATS):** Menandai portal lamaran langsung seperti Greenhouse/Lever agar kamu melamar lebih cepat.
-    6. **Tab Panduan Pencarian:** Buka tab kedua di atas jika kamu ingin belajar teknik Google Dorking untuk menemukan lowongan tersembunyi.
+       - 🎛️ **Filter Bebas:** Kamu bisa centang/uncentang filter sistem kerja & ATS tanpa perlu menekan tombol pencarian ulang!
+    
+    💡 **Penting untuk Calon Perantau:**
+    Bila kamu berniat melamar pekerjaan di luar kota/provinsi, cek kalkulasi biaya hidup & simulasi merantau di **[Nafkah - Kalkulator Merantau](https://nafkah.adenaufal.com/)**.
     """)
 
 # --- TABS UTAMA ---
@@ -111,8 +120,8 @@ with tab1:
     with col_btn2:
         search_clicked = st.button("🔍 Cari Pekerjaan", type="primary", use_container_width=True)
 
+    # --- LOGIKA PENARIKAN DATA (HANYA SAAT TOMBOL DIKLIK) ---
     if search_clicked:
-        st.session_state["search_clicked"] = True
         sites = settings["sites"]
         
         if not sites:
@@ -157,75 +166,92 @@ with tab1:
 
         if not all_dfs:
             st.warning("Tidak ada lowongan ditemukan. Coba perluas filter lokasi atau buka tab Panduan Pencarian.")
+            st.session_state.raw_jobs = pd.DataFrame()
+            st.session_state.search_executed = False
         else:
             combined_jobs = pd.concat(all_dfs, ignore_index=True)
-            raw_count = len(combined_jobs)
             
-            # PIPELINE PROSES DATA
+            # PIPELINE PROSES DATA & DEDUPLIKASI
             valid_jobs = validate_jobs(combined_jobs, settings["hours_old"])
             clean_jobs = deduplicate_jobs(valid_jobs)
             
             clean_jobs["Form Type"] = clean_jobs["job_url"].apply(detect_ats_friendly)
             clean_jobs["Work Type"] = clean_jobs.apply(categorize_work_type, axis=1)
-            final_jobs = calculate_match_score(clean_jobs, settings["target_keywords"], settings["exclude_keywords"])
+            
+            # SIMPAN HASIL MENTAH KE SESSION STATE (Mencegah Reset Saat Filter Diubah)
+            st.session_state.raw_jobs = clean_jobs
+            st.session_state.search_executed = True
 
-            filtered_count = raw_count - len(final_jobs)
-            st.success(f"✅ Menemukan **{len(final_jobs)}** lowongan unik & valid (Telah menyaring {filtered_count} duplikat / tidak valid).")
+    # --- TAMPILAN HASIL (DIJALANKAN DARI SESSION STATE) ---
+    if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
+        # Hitung Ulang Match Score Berdasarkan Filter Kata Kunci Saat Ini
+        jobs_to_display = calculate_match_score(
+            st.session_state.raw_jobs.copy(), 
+            settings["target_keywords"], 
+            settings["exclude_keywords"]
+        )
 
-            # FILTER UI INTERAKTIF
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                filter_work = st.multiselect("Filter Jenis Kerja", options=["🌐 Remote", "🏢 Hybrid", "📍 On-site"], default=["🌐 Remote", "🏢 Hybrid", "📍 On-site"])
-            with col_f2:
-                filter_ats_only = st.checkbox("Hanya tampilkan ⚡ Quick Apply (ATS)", value=False)
+        st.info("💡 **Tips Merantau:** Mau melamar di luar kota? Cek kalkulasi simulasi biaya hidup di **[Nafkah.adenaufal.com](https://nafkah.adenaufal.com/)**.")
 
-            if filter_work:
-                final_jobs = final_jobs[final_jobs["Work Type"].isin(filter_work)]
-            if filter_ats_only:
-                final_jobs = final_jobs[final_jobs["Form Type"] == "⚡ Quick Apply (ATS)"]
+        # FILTER UI INTERAKTIF (Real-Time Tanpa Scraping Ulang)
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filter_work = st.multiselect("Filter Jenis Kerja", options=["🌐 Remote", "🏢 Hybrid", "📍 On-site"], default=["🌐 Remote", "🏢 Hybrid", "📍 On-site"])
+        with col_f2:
+            filter_ats_only = st.checkbox("Hanya tampilkan ⚡ Quick Apply (ATS)", value=False)
 
-            # TAMPILAN TABEL
-            display_cols = ["Match Score", "title", "company", "location", "Work Type", "Form Type", "Matched Skills", "site", "job_url"]
-            existing_cols = [c for c in display_cols if c in final_jobs.columns]
+        if filter_work:
+            jobs_to_display = jobs_to_display[jobs_to_display["Work Type"].isin(filter_work)]
+        if filter_ats_only:
+            jobs_to_display = jobs_to_display[jobs_to_display["Form Type"] == "⚡ Quick Apply (ATS)"]
 
-            st.dataframe(
-                final_jobs[existing_cols],
-                column_config={
-                    "Match Score": st.column_config.ProgressColumn("Tingkat Cocok", help="Kecocokan dengan target skill", format="%d%%", min_value=0, max_value=100),
-                    "title": "Judul Posisi",
-                    "company": "Perusahaan",
-                    "location": "Lokasi",
-                    "Work Type": "Sistem Kerja",
-                    "Form Type": "Format Lamaran",
-                    "Matched Skills": "Skill Cocok",
-                    "site": "Sumber",
-                    "job_url": st.column_config.LinkColumn("Link Lamaran", display_text="Lamar ↗️")
-                },
-                use_container_width=True,
-                hide_index=True
+        st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
+
+        # TAMPILAN TABEL
+        display_cols = ["Match Score", "title", "company", "location", "Work Type", "Form Type", "Matched Skills", "site", "job_url"]
+        existing_cols = [c for c in display_cols if c in jobs_to_display.columns]
+
+        st.dataframe(
+            jobs_to_display[existing_cols],
+            column_config={
+                "Match Score": st.column_config.ProgressColumn("Tingkat Cocok", help="Kecocokan dengan target skill", format="%d%%", min_value=0, max_value=100),
+                "title": "Judul Posisi",
+                "company": "Perusahaan",
+                "location": "Lokasi",
+                "Work Type": "Sistem Kerja",
+                "Form Type": "Format Lamaran",
+                "Matched Skills": "Skill Cocok",
+                "site": "Sumber",
+                "job_url": st.column_config.LinkColumn("Link Lamaran", display_text="Lamar ↗️")
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # DOWNLOAD CSV
+        loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] else "anywhere"
+        search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "all_jobs"
+        timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
+        csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
+
+        csv_bytes = jobs_to_display.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Hasil (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
+
+        # GOOGLE JOBS QUERY MANUAL & CALLOUT KE TAB 2
+        if settings["google_enabled"]:
+            st.divider()
+            st.subheader("🔍 Ekstra: Query Pencarian Manual Google Jobs")
+            google_query = build_google_search_term(
+                search_term=settings["search_term"], location=settings["location"],
+                hours_old=settings["hours_old"], exclude_age=settings["exclude_age"],
+                custom_exclude=settings["custom_exclude"]
             )
+            st.code(google_query, language="text")
+            encoded_q = urllib.parse.quote(google_query)
+            st.markdown(f"[🔗 Klik di sini untuk cari langsung di Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
 
-            # DOWNLOAD CSV
-            loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] else "anywhere"
-            search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "all_jobs"
-            timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
-            csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
-
-            csv_bytes = final_jobs.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download Hasil (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
-
-            # GOOGLE JOBS QUERY MANUAL
-            if settings["google_enabled"]:
-                st.divider()
-                st.subheader("🔍 Ekstra: Query Pencarian Manual Google Jobs")
-                google_query = build_google_search_term(
-                    search_term=settings["search_term"], location=settings["location"],
-                    hours_old=settings["hours_old"], exclude_age=settings["exclude_age"],
-                    custom_exclude=settings["custom_exclude"]
-                )
-                st.code(google_query, language="text")
-                encoded_q = urllib.parse.quote(google_query)
-                st.markdown(f"[🔗 Klik di sini untuk cari langsung di Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
+            # Callout / Shortcut Penjelasan ke Tab 2
+            st.info("💡 **Butuh Query Google yang Lebih Spesifik?** Buka tab **📖 Panduan Pencarian** di bagian paling atas halaman ini untuk melihat preset dorking per kota, portal ATS, dan link waktu LinkedIn.")
 
 # ==================== TAB 2: PANDUAN PENCARIAN ====================
 with tab2:
@@ -307,7 +333,8 @@ Contoh output:
 Buatkan 5–10 variasi dengan operator yang berbeda."""
         st.code(prompt, language="text")
 
-    with st.expander("🌐 Komunitas & Alat Gratis"):
+    with st.expander("🌐 Komunitas & Alat Gratis Pendukung Karier"):
+        st.markdown("[Nafkah - Kalkulator Merantau & Biaya Hidup](https://nafkah.adenaufal.com/)")
         st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
         st.markdown("[Alat CV & Tracking Lamaran Gratis](https://jobresume.rndhri.com/)")
         st.markdown("[WEF Future of Jobs Report 2025](https://www.weforum.org/publications/the-future-of-jobs-report-2025/)")
