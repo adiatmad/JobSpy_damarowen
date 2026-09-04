@@ -30,22 +30,21 @@ if "raw_jobs" not in st.session_state:
 if "search_executed" not in st.session_state:
     st.session_state.search_executed = False
 
-# --- HELPER UI: EXPANDER PENGATURAN ---
 def render_search_settings():
     with st.expander("🔧 Pengaturan & Filter Pencarian", expanded=not st.session_state.search_executed):
         st.caption("Atur kata kunci, lokasi, dan filter kecocokan skill kamu di sini.")
 
         col1, col2 = st.columns(2)
         with col1:
-            search_term = st.text_input("Kata kunci / Posisi pekerjaan", value="Python Developer", help="Kosongkan untuk pencarian umum.")
-            location = st.text_input("Lokasi (opsional)", value="Indonesia", help="Contoh: Jakarta, Indonesia, atau kosongkan untuk remote.")
-            target_keywords = st.text_input("Target Skill Kamu (pisahkan dengan koma)", value="Python, SQL, Docker", help="Ketik skill wajib untuk menghitung skor kecocokan.")
+            search_term = st.text_input("Kata kunci / Posisi pekerjaan", value="Python Developer")
+            location = st.text_input("Lokasi (opsional)", value="Indonesia")
+            target_keywords = st.text_input("Target Skill Kamu (pisahkan dengan koma)", value="Python, SQL, Docker")
 
         with col2:
-            country_indeed = st.text_input("Negara (Indeed/Glassdoor)", value="Indonesia", help="Contoh: Indonesia, USA, Singapore.")
-            results_wanted = st.slider("Hasil per situs", min_value=5, max_value=50, value=15, step=5, help="Disarankan 10-20 agar server tetap cepat dan aman dari throttling.")
-            hours_old = st.number_input("Diposting dalam (jam)", min_value=0, value=72, step=24, help="0 = semua umur postingan.")
-            exclude_keywords = st.text_input("Kata kunci yang dihindari (pisahkan dengan koma)", value="Senior, Lead, Manager", help="Posisikan kata seperti 'Senior' untuk menyaring posisi entry-level.")
+            country_indeed = st.text_input("Negara (Indeed/Glassdoor)", value="Indonesia")
+            results_wanted = st.slider("Hasil per situs", min_value=5, max_value=50, value=15, step=5)
+            hours_old = st.number_input("Diposting dalam (jam)", min_value=0, value=72, step=24)
+            exclude_keywords = st.text_input("Kata kunci yang dihindari (pisahkan dengan koma)", value="Senior, Lead, Manager")
 
         st.caption("Pilih situs pekerjaan:")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
@@ -54,18 +53,14 @@ def render_search_settings():
         for i, site in enumerate(ALL_SITES):
             col = cols[i % 4]
             if site == "glassdoor" and not glassdoor_ok:
-                col.checkbox("glassdoor 🚫", value=False, disabled=True, help=f"Tidak tersedia untuk '{country_indeed}'.", key="site_glassdoor")
+                col.checkbox("glassdoor 🚫", value=False, disabled=True, key="site_glassdoor")
             else:
                 checked = col.checkbox(site, value=(site in DEFAULT_SITES), key=f"site_{site}")
                 if checked:
                     sites.append(site)
 
-        if not glassdoor_ok:
-            st.caption(f"⚠️ Glassdoor dinonaktifkan — tidak mendukung negara '{country_indeed}'.")
-        st.caption("⚠️ Note: Zip_recruiter utamanya mencakup wilayah US/Canada.")
-
         st.markdown("---")
-        proxy_input = st.text_input("Proxy Opsional (Pengguna Lanjutan)", value="", placeholder="http://user:pass@host:port", help="Kosongkan jika tidak punya. Menggunakan proxy membantu menghindari blokir IP.")
+        proxy_input = st.text_input("Proxy Opsional (Pengguna Lanjutan)", value="", placeholder="http://user:pass@host:port")
 
         st.markdown("---")
         google_enabled = st.checkbox("✨ Buatkan juga saran pencarian Google Jobs manual", value=False)
@@ -76,7 +71,7 @@ def render_search_settings():
             with col_g1:
                 exclude_age = st.checkbox("Hilangkan kata usia (-usia -age -umur)", value=False)
             with col_g2:
-                custom_exclude = st.text_input("Kecualikan kata kunci Google kustom", value="", placeholder="fresh graduate entry level")
+                custom_exclude = st.text_input("Kecualikan kata kunci Google kustom", value="")
 
         return {
             "search_term": search_term,
@@ -101,19 +96,15 @@ with st.expander("❓ **Petunjuk Penggunaan (Klik Untuk Membaca)**", expanded=Fa
     st.markdown("""
     **Panduan Singkat:**
     1. Buka expander **🔧 Pengaturan & Filter Pencarian** di bawah.
-    2. Masukkan posisi yang dicari (misal: `Data Analyst`) dan lokasi (`Indonesia`).
-    3. Masukkan **Target Skill** kamu (misal: `Python, SQL`). Aplikasi akan menghitung persen kecocokan (Match Score).
-    4. Klik tombol **🔍 Cari Pekerjaan**.
-    5. **Fitur Otomatis & Filter Real-Time:**
-       - 🧹 **Anti-Duplikat:** Posisi sama dari platform berbeda otomatis digabung.
-       - ⚡ **Quick Apply (ATS):** Menandai portal lamaran langsung seperti Greenhouse/Lever agar kamu melamar lebih cepat.
-       - 🎛️ **Filter Bebas:** Kamu bisa centang/uncentang filter sistem kerja & ATS tanpa perlu menekan tombol pencarian ulang!
+    2. Masukkan posisi yang dicari dan lokasi.
+    3. Masukkan **Target Skill** kamu. Aplikasi akan menghitung persen kecocokan (Match Score).
+    4. Klik **🔍 Cari Pekerjaan**.
+    5. **Centang Status Lamaran:** Kamu bisa menandai lowongan yang sudah kamu lamar langsung di tabel!
     
     💡 **Penting untuk Calon Perantau:**
-    Bila kamu berniat melamar pekerjaan di luar kota/provinsi, cek kalkulasi biaya hidup & simulasi merantau di **[Nafkah - Kalkulator Merantau](https://nafkah.adenaufal.com/)**.
+    Cek kalkulasi biaya hidup & simulasi merantau di **[Nafkah - Kalkulator Merantau](https://nafkah.adenaufal.com/)**.
     """)
 
-# --- TABS UTAMA ---
 tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
 
 # ==================== TAB 1: CARI PEKERJAAN ====================
@@ -124,10 +115,8 @@ with tab1:
     with col_btn2:
         search_clicked = st.button("🔍 Cari Pekerjaan", type="primary", use_container_width=True)
 
-    # --- LOGIKA PENARIKAN DATA (HANYA SAAT TOMBOL DIKLIK) ---
     if search_clicked:
         sites = settings["sites"]
-        
         if not sites:
             st.error("Pilih minimal satu situs pekerjaan.")
             st.stop()
@@ -139,8 +128,6 @@ with tab1:
 
         for site in sites:
             status_area.info(f"⏳ Sedang mencari di **{site}**...")
-            
-            # Panggilan fungsi berperekat Caching (@st.cache_data)
             df, err = scrape_one_site_cached(
                 site=site,
                 search_term=settings["search_term"],
@@ -150,7 +137,6 @@ with tab1:
                 hours_old=settings["hours_old"],
                 proxy=settings["proxy"]
             )
-            
             if err:
                 site_status[site] = ("error", err)
             elif df is None or len(df) == 0:
@@ -177,19 +163,17 @@ with tab1:
             st.session_state.search_executed = False
         else:
             combined_jobs = pd.concat(all_dfs, ignore_index=True)
-            
-            # PIPELINE PROSES DATA & DEDUPLIKASI
             valid_jobs = validate_jobs(combined_jobs, settings["hours_old"])
             clean_jobs = deduplicate_jobs(valid_jobs)
             
             clean_jobs["Form Type"] = clean_jobs["job_url"].apply(detect_ats_friendly)
             clean_jobs["Work Type"] = clean_jobs.apply(categorize_work_type, axis=1)
+            clean_jobs["Sudah Dilamar"] = False  # Kolom Tracker Interaktif
             
-            # SIMPAN HASIL MENTAH KE SESSION STATE
             st.session_state.raw_jobs = clean_jobs
             st.session_state.search_executed = True
 
-    # --- TAMPILAN HASIL (DIJALANKAN DARI SESSION STATE) ---
+    # --- TAMPILAN HASIL (STATE DRIVEN) ---
     if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
         jobs_to_display = calculate_match_score(
             st.session_state.raw_jobs.copy(), 
@@ -197,9 +181,9 @@ with tab1:
             settings["exclude_keywords"]
         )
 
-        st.info("💡 **Tips Merantau:** Mau melamar di luar kota? Cek kalkulasi simulasi biaya hidup di **[Nafkah.adenaufal.com](https://nafkah.adenaufal.com/)**.")
+        st.info("💡 **Tips Merantau:** Cek simulasi biaya hidup lengkap di **[Nafkah.adenaufal.com](https://nafkah.adenaufal.com/)**.")
 
-        # FILTER UI INTERAKTIF (Real-Time Tanpa Scraping Ulang)
+        # FILTER REAL-TIME
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             filter_work = st.multiselect("Filter Jenis Kerja", options=["🌐 Remote", "🏢 Hybrid", "📍 On-site"], default=["🌐 Remote", "🏢 Hybrid", "📍 On-site"])
@@ -213,37 +197,38 @@ with tab1:
 
         st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
 
-        # TAMPILAN TABEL
-        display_cols = ["Match Score", "title", "company", "location", "Work Type", "Form Type", "Matched Skills", "site", "job_url"]
-        existing_cols = [c for c in display_cols if c in jobs_to_display.columns]
-
-        st.dataframe(
-            jobs_to_display[existing_cols],
+        # TABEL INTERAKTIF TRACKER (Mobile Optimized Layout)
+        display_cols = ["Sudah Dilamar", "title", "company", "Rekomendasi & Match", "Detail & Finansial", "job_url"]
+        
+        edited_df = st.data_editor(
+            jobs_to_display[display_cols],
             column_config={
-                "Match Score": st.column_config.ProgressColumn("Tingkat Cocok", help="Kecocokan dengan target skill", format="%d%%", min_value=0, max_value=100),
-                "title": "Judul Posisi",
+                "Sudah Dilamar": st.column_config.CheckboxColumn("Status", help="Centang jika sudah dilamar", default=False),
+                "title": "Posisi Pekerjaan",
                 "company": "Perusahaan",
-                "location": "Lokasi",
-                "Work Type": "Sistem Kerja",
-                "Form Type": "Format Lamaran",
-                "Matched Skills": "Skill Cocok",
-                "site": "Sumber",
-                "job_url": st.column_config.LinkColumn("Link Lamaran", display_text="Lamar ↗️")
+                "Rekomendasi & Match": "Match & Format",
+                "Detail & Finansial": "Sistem, Lokasi & UMR",
+                "job_url": st.column_config.LinkColumn("Lamaran", display_text="Lamar ↗️")
             },
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            key="job_tracker_editor"
         )
 
-        # DOWNLOAD CSV
+        # UPDATE STATUS DILAMAR KE SESSION STATE
+        if edited_df is not None:
+            st.session_state.raw_jobs.update(edited_df[["Sudah Dilamar"]])
+
+        # DOWNLOAD CSV DENGAN STATUS TRACKER
         loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] else "anywhere"
         search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "all_jobs"
         timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
-        csv_filename = f"jobs_{search_part}_{loc_part}_{timestamp}.csv"
+        csv_filename = f"jobs_tracker_{search_part}_{loc_part}_{timestamp}.csv"
 
-        csv_bytes = jobs_to_display.to_csv(index=False).encode("utf-8")
-        st.download_button("📥 Download Hasil (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
+        csv_bytes = edited_df.to_csv(index=False).encode("utf-8")
+        st.download_button("📥 Download Tracker Lamaran (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
 
-        # GOOGLE JOBS QUERY MANUAL & CALLOUT KE TAB 2
+        # GOOGLE JOBS MANUAL QUERY
         if settings["google_enabled"]:
             st.divider()
             st.subheader("🔍 Ekstra: Query Pencarian Manual Google Jobs")
@@ -256,121 +241,21 @@ with tab1:
             encoded_q = urllib.parse.quote(google_query)
             st.markdown(f"[🔗 Klik di sini untuk cari langsung di Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
 
-            st.info("💡 **Butuh Query Google yang Lebih Spesifik / Portal Remote?** Buka tab **📖 Panduan Pencarian** di bagian atas halaman ini untuk melihat dorking per kota dan katalog situs remote spesialis per bidang.")
-
 # ==================== TAB 2: PANDUAN PENCARIAN ====================
 with tab2:
     st.title("📖 Panduan Pencarian Pekerjaan")
-    st.markdown("**Teknik praktis mencari informasi pekerjaan valid menggunakan Google Search dan katalog portal spesialis.**")
+    st.markdown("**Teknik praktis mencari informasi pekerjaan valid dan katalog portal spesialis.**")
 
-    # --- KATALOG PEMILAH PLATFORM REMOTE PER BIDANG ---
-    with st.expander("🌐 **Mana Platform Remote yang Cocok Untukmu? (Katalog Spesialis Per Bidang)**", expanded=True):
-        st.caption("Aplikasi ini mengelompokkan portal remote kerja berdasarkan latar belakang spesifikmu agar kamu tidak 'salah kamar' saat melamar.")
-
-        st.markdown("**1. NGO, Pembangunan Internasional & Kemanusiaan (Non-Profit)**")
-        st.markdown("- *Cocok untuk:* Program Officer, Research, Campaigner, Monitoring & Evaluation (M&E).")
-        st.markdown("- 🔗 **[Buka Katalog NGO & Int'l Dev (Wasian)](https://wasian.my.id/remoteworks/?cat=NGO+%26+International+Development)**")
-        st.caption("💡 Portal khusus organisasi nirlaba global (seperti PBB, LSM Internasional) yang terbuka untuk talenta negara berkembang.")
-
-        st.markdown("---")
-        st.markdown("**2. Teknologi, Software & Data Science**")
-        st.markdown("- *Cocok untuk:* Software Engineer, Data Analyst, DevOps, Web Developer.")
-        st.markdown("- 🔗 **[Buka Katalog Tech & Engineering (Wasian)](https://wasian.my.id/remoteworks/?cat=Engineering+%26+Tech)**")
-        st.caption("💡 Fokus pada posisi teknis berbasis gaji standar global / USD.")
-
-        st.markdown("---")
-        st.markdown("**3. Desain, Penulisan, Pemasaran & Konten Kreatif**")
-        st.markdown("- *Cocok untuk:* UI/UX Designer, Copywriter, Social Media Specialist, Content Writer.")
-        st.markdown("- 🔗 **[Buka Katalog Design & Creative (Wasian)](https://wasian.my.id/remoteworks/?cat=Design+%26+Creative)**")
-        st.caption("💡 Berisi platform kerja remote dan proyek kontrak berbasis portofolio.")
-
-        st.markdown("---")
-        st.markdown("**4. Operasional, Customer Support & Virtual Assistant**")
-        st.markdown("- *Cocok untuk:* Customer Support (Chat/Email), Virtual Assistant, Admin, Operations.")
-        st.markdown("- 🔗 **[Buka Katalog Support & Operations (Wasian)](https://wasian.my.id/remoteworks/?cat=Customer+Support)**")
-        st.caption("💡 Membutuhkan kemampuan Bahasa Inggris aktif. Banyak yang menyediakan jadwal ramah zona waktu Asia.")
-
-    with st.expander("🚀 Mulai Cepat Google Dorking – Copy‑paste kata kunci ini", expanded=False):
-        st.markdown("**1. Pencarian umum (Indonesia)**")
-        st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org)', language="text")
-        st.caption("💡 Tambahkan `-jobstreet` di akhir untuk mengecualikan JobStreet.")
-
-        st.markdown("**2. Kota spesifik (contoh: Temanggung, Jateng)**")
-        st.code('("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy") AND ("Temanggung" OR "Magelang" OR "Jawa Tengah") (site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org) -jobstreet', language="text")
-
-        st.markdown("**3. Area Surabaya – Gresik**")
-        st.code('intext:(recruitment OR rekrutmen OR karir OR lowongan OR career) AND (surabaya OR gresik)', language="text")
-
-    with st.expander("📍 Buat query lokasi sendiri", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            city = st.text_input("Kota", "Temanggung")
-        with col2:
-            province = st.text_input("Provinsi (opsional)", "Jawa Tengah")
-        exclude = st.text_input("Kata yang dikecualikan (contoh: jobstreet)", value="jobstreet")
-        if st.button("Buat Query Lokasi", use_container_width=True):
-            base = f'("recruitment" OR "rekrutmen" OR "karir" OR "lowongan" OR "career" OR "pekerjaan" OR "job" OR "vacancy")'
-            loc = f'("{city}"'
-            if province:
-                loc += f' OR "{province}"'
-            loc += ") "
-            sites_part = "(site:*.co.id OR site:*.ac.id OR site:*.go.id OR site:*.com OR site:*.org)"
-            query = f"{base} AND {loc} {sites_part}"
-            if exclude.strip():
-                query += f" -{exclude.strip()}"
-            st.code(query, language="text")
-            st.markdown(f"[🔗 Cari di Google](https://www.google.com/search?q={urllib.parse.quote(query)})")
-
-    with st.expander("🏢 Scan portal pekerjaan spesifik (ramah remote)", expanded=False):
-        st.markdown("Portal ini sering digunakan perusahaan dengan budaya baik dan ramah remote.")
-        portals = [
-            ("BambooHR", "inurl:bamboohr.com 'jobs/view' remote after:2026-05-01"),
-            ("Greenhouse", "site:greenhouse.io Remote"),
-            ("Lever", "site:jobs.lever.co Remote"),
-            ("Workable", "site:careers.workable.com Remote"),
-            ("Remote OK", "site:remoteok.com remote"),
-            ("We Work Remotely", "site:weworkremotely.com"),
-        ]
-        for name, query in portals:
-            st.markdown(f"**{name}**")
-            st.code(query, language="text")
-            st.markdown(f"[🔗 Cari](https://www.google.com/search?q={urllib.parse.quote(query)})")
-
-    with st.expander("🔗 Filter waktu LinkedIn (24 jam terakhir)", expanded=False):
-        st.markdown("Ubah angka setelah `r` untuk rentang waktu berbeda (dalam detik).")
-        linkedin_location = st.text_input("Lokasi LinkedIn", "Surabaya")
-        linkedin_keyword = st.text_input("Kata kunci LinkedIn", "hiring")
-        if st.button("Buat Link LinkedIn", use_container_width=True):
-            base = "https://www.linkedin.com/jobs/search/"
-            params = {
-                "keywords": f"{linkedin_keyword} {linkedin_location}",
-                "f_TPR": "r86400",
-                "origin": "JOB_SEARCH_PAGE_JOB_FILTER",
-                "sortBy": "R"
-            }
-            query_str = urllib.parse.urlencode(params)
-            url = f"{base}?{query_str}"
-            st.code(url, language="text")
-            st.markdown(f"[🔗 Buka LinkedIn]({url})")
-
-    with st.expander("🤖 AI Helper – Buat kata kunci dengan ChatGPT / DeepSeek", expanded=False):
-        st.markdown("Salin prompt ini dan tempelkan ke ChatGPT, DeepSeek, atau Meta AI.")
-        prompt = """Buatkan kata kunci untuk mencari informasi pekerjaan bidang [your field] di [your location] lewat Google Search dengan teknik Google Dorking.
-
-Contoh output:
-- site:indeed.co.id "GIS" "Indonesia" "job"
-- inurl:career "GIS" "Indonesia" "vacancy"
-- filetype:pdf "Lowongan Kerja GIS" "Indonesia"
-
-Buatkan 5–10 variasi dengan operator yang berbeda."""
-        st.code(prompt, language="text")
+    with st.expander("🌐 **Mana Platform Remote yang Cocok Untukmu? (Katalog Spesialis)**", expanded=True):
+        st.markdown("**1. NGO & Non-Profit Internasional:** [Katalog NGO (Wasian)](https://wasian.my.id/remoteworks/?cat=NGO+%26+International+Development)")
+        st.markdown("**2. Tech & Software:** [Katalog Engineering (Wasian)](https://wasian.my.id/remoteworks/?cat=Engineering+%26+Tech)")
+        st.markdown("**3. Desain & Konten Kreatif:** [Katalog Creative (Wasian)](https://wasian.my.id/remoteworks/?cat=Design+%26+Creative)")
+        st.markdown("**4. Support & Operations:** [Katalog Customer Support (Wasian)](https://wasian.my.id/remoteworks/?cat=Customer+Support)")
 
     with st.expander("🌐 Komunitas & Alat Gratis Pendukung Karier", expanded=False):
         st.markdown("[Nafkah - Kalkulator Merantau & Biaya Hidup](https://nafkah.adenaufal.com/)")
         st.markdown("[Katalog Remote Works (Wasian)](https://wasian.my.id/remoteworks/)")
         st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
-        st.markdown("[Alat CV & Tracking Lamaran Gratis](https://jobresume.rndhri.com/)")
-        st.markdown("[WEF Future of Jobs Report 2025](https://www.weforum.org/publications/the-future-of-jobs-report-2025/)")
 
 st.markdown("---")
-st.markdown("Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) — dibuat untuk pencari kerja yang tidak menyerah.")
+st.markdown("Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) & [Nafkah](https://github.com/adenaufal/nafkah).")
