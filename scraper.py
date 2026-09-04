@@ -23,10 +23,8 @@ def build_kwargs_for_site(site: str, search_term: str, location: str, country_in
         kwargs["proxies"] = [proxy.strip()]
     return kwargs
 
-# Caching selama 1 jam (3600 detik) untuk menghemat CPU server & mencegah throttling
 @st.cache_data(ttl=3600, show_spinner=False)
 def scrape_one_site_cached(site: str, search_term: str, location: str, country_indeed: str, results_wanted: int, hours_old: int, proxy: str = None) -> tuple[pd.DataFrame | None, str | None]:
-    """Scrape 1 situs dengan batas waktu, proteksi retry, dan Caching Streamlit."""
     last_error = None
     kwargs = build_kwargs_for_site(site, search_term, location, country_indeed, results_wanted, hours_old, proxy)
 
