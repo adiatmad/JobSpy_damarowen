@@ -1,134 +1,206 @@
 import re
+import requests
 import pandas as pd
-from rapidfuzz import fuzz
+import streamlit as st
+from rapidfuzz import fuzz, process
+from pypdf import PdfReader
 
-def validate_jobs(jobs: pd.DataFrame, hours_old: int) -> pd.DataFrame:
-    """Membersihkan lowongan yang tidak lengkap atau kadaluwarsa."""
-    if jobs.empty:
-        return jobs
+# URL Data Mentah Repo Nafkah (Otomatis Sync)
+NAFKAH_RAW_URL = "https://raw.githubusercontent.com/adenaufal/nafkah/main/data/umr.json"
 
-    for col in ("title", "company"):
-        if col in jobs.columns:
-            jobs = jobs[jobs[col].notna() & (jobs[col].astype(str).str.strip() != "")]
+# Data Cadangan Lokal (Mencegah App Crash jika GitHub Down)
+FALLBACK_NAFKAH = {
+    "jakarta": {"umr": 5067381, "cost": 3500000},
+    "surabaya": {"umr": 4725479, "cost": 2800000},
+    "bandung": {"umr": 4209309, "cost": 2600000},
+    "medan": {"umr": 3769082, "cost": 2400000},
+    "semarang": {"umr": 3243969, "cost": 2200000},
+    "yogyakarta": {"umr": 2492997, "cost": 1800000},
+    "tangerang": {"umr": 4760289, "cost": 3000000},
+    "bekasi": {"umr": 5219263, "cost": 3200000},
+    "depok": {"umr": 4878612, "cost": 3000000},
+    "bogor": {"umr": 4813988, "cost": 2900000},
+    "jawa tengah": {"umr": 2036947, "cost": 1700000},
+    "jawa barat": {"umr": 2057495, "cost": 1800000},
+    "jawa timur": {"umr": 2165244, "cost": 1800000},
+}
 
-    if "job_url" in jobs.columns:
-        jobs = jobs[jobs["job_url"].notna() & (jobs["job_url"].astype(str).str.strip() != "")]
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_nafkah_data() -> dict:
+    """Mengambil data UMR/Biaya Hidup terbaru dari repo GitHub Nafkah secara otomatis."""
+    try:
+        res = requests.get(NAFKAH_RAW_URL, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            formatted = {}
+            for item in data:
+                key = item.get("city", "").lower()
+                formatted[key] = {
+                    "umr": item.get("umr", 0),
+                    "cost": item.get("estimated_cost", 0)
+                }
+            return formatted
+    except Exception:
+        pass
+    return FALLBACK_NAFKAH
 
-    if hours_old and hours_old > 0 and "date_posted" in jobs.columns:
-        cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(hours=int(hours_old))
-        parsed_dates = pd.to_datetime(jobs["date_posted"], errors="coerce")
-        stale_mask = parsed_dates.notna() & (parsed_dates < cutoff)
-        jobs = jobs[~stale_mask]
+def get_city_financial_info(location_str: str) -> str:
+    """Mencocokkan lokasi lowongan dengan data Nafkah (Kota/Provinsi)."""
+    if not location_str or pd.isna(location_str):
+        return "📍 Lokasi tak terdeteksi"
+    
+    loc_clean = str(location_str).lower()
+    if "remote" in loc_clean:
+        return "🌐 Full Remote (Bebas Biaya Hidup)"
+    
+    nafkah_db = fetch_nafkah_data()
+    
+    # Matching langsung kata kunci
+    for city_key, info in nafkah_db.items():
+        if city_key in loc_clean:
+            umr_fmt = f"Rp {info['umr']/1e6:.2f}M" if info['umr'] else "-"
+            cost_fmt = f"Rp {info['cost']/1e6:.2f}M" if info['cost'] else "-"
+            return f"💰 UMR {umr_fmt} | Est. Hidup ~{cost_fmt}"
+    
+    return "💡 Cek Biaya Hidup di Nafkah.adenaufal.com"
 
-    return jobs
+def extract_real_salary(description: str) -> str:
+    """Mengekstrak gaji asli jika dicantumkan di deskripsi pekerjaan."""
+    if not description or pd.isna(description):
+        return "🔒 Gaji Dirahasiakan"
+    
+    # Regex pencarian format Rupiah (Contoh: Rp 8.000.000 - Rp 12.000.000 atau 8jt - 12jt)
+    patterns = [
+        r"(?:rp|IDR)\s?[\d\.\,]+\s?\-\s?(?:rp|IDR)?\s?[\d\.\,]+",
+        r"\b\d{1,2}\s?-\s?\d{1,2}\s?(?:juta|jt)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, str(description), re.IGNORECASE)
+        if match:
+            return f"💰 {match.group(0)}"
+            
+    return "🔒 Gaji Dirahasiakan"
+
+def validate_jobs(df: pd.DataFrame, hours_old: int = 0) -> pd.DataFrame:
+    """Memvalidasi dan membersihkan data lowongan."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    
+    valid_df = df.dropna(subset=["title", "job_url"]).copy()
+    valid_df["title"] = valid_df["title"].astype(str).str.strip()
+    valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
+    
+    return valid_df
+
+def deduplicate_jobs(df: pd.DataFrame, threshold: int = 85) -> pd.DataFrame:
+    """Menghapus lowongan duplikat antar portal kerja."""
+    if df.empty:
+        return df
+    
+    deduped_rows = []
+    seen_keys = []
+    
+    for _, row in df.iterrows():
+        key = f"{row['title']} {row['company']}".lower()
+        is_duplicate = False
+        
+        for seen in seen_keys:
+            if fuzz.ratio(key, seen) >= threshold:
+                is_duplicate = True
+                break
+                
+        if not is_duplicate:
+            seen_keys.append(key)
+            deduped_rows.append(row)
+            
+    return pd.DataFrame(deduped_rows)
 
 def detect_ats_friendly(url: str) -> str:
-    """Mendeteksi apakah link mengarah langsung ke portal ATS cepat."""
-    if not isinstance(url, str) or not url:
-        return "Standard Form"
-    url_lower = url.lower()
-    ats_domains = ["greenhouse.io", "lever.co", "smartrecruiters.com", "bamboohr.com", "workable.com"]
-    for domain in ats_domains:
-        if domain in url_lower:
-            return "⚡ Quick Apply (ATS)"
-    return "Standard Form"
+    """Menandai lamaran langsung (Greenhouse/Lever/Workable)."""
+    if not url or pd.isna(url):
+        return "📋 Form Standar"
+    
+    url_str = str(url).lower()
+    ats_domains = ["greenhouse.io", "lever.co", "workable.com", "bamboohr.com", "ashbyhq.com"]
+    
+    if any(domain in url_str for domain in ats_domains):
+        return "⚡ Quick Apply (ATS)"
+    return "📋 Form Standar"
 
 def categorize_work_type(row) -> str:
-    """Mengkategorikan sistem kerja menjadi Remote, Hybrid, atau On-site."""
-    is_remote = str(row.get("is_remote", "")).lower()
-    location = str(row.get("location", "")).lower()
-    title = str(row.get("title", "")).lower()
-    description = str(row.get("description", "")).lower()
-
-    if is_remote in ["true", "1"] or "remote" in location or "remote" in title:
+    """Mengkategorikan Remote / Hybrid / On-site."""
+    text = f"{row.get('title', '')} {row.get('location', '')} {row.get('description', '')}".lower()
+    
+    if "remote" in text or row.get("is_remote") is True:
         return "🌐 Remote"
-    elif "hybrid" in location or "hybrid" in title or "hybrid" in description[:300]:
+    elif "hybrid" in text:
         return "🏢 Hybrid"
     return "📍 On-site"
 
-def deduplicate_jobs(df: pd.DataFrame, threshold: float = 85.0) -> pd.DataFrame:
-    """Menggabungkan lowongan serupa menggunakan Fuzzy Matching."""
+def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skills_str: str = "") -> pd.DataFrame:
+    """Menghitung skor kecocokan & Prioritas Lamaran (Solusi Decision Paralysis)."""
     if df.empty:
         return df
-
-    df["clean_title"] = df["title"].astype(str).str.lower().str.strip()
-    df["clean_company"] = df["company"].astype(str).str.lower().str.strip()
     
-    # Hapus duplikat persis lebih awal
-    df = df.drop_duplicates(subset=["clean_title", "clean_company", "location"]).copy()
-
-    indices_to_drop = set()
-    rows = df.to_dict('records')
-    n = len(rows)
-
-    for i in range(n):
-        if i in indices_to_drop:
-            continue
-        for j in range(i + 1, n):
-            if j in indices_to_drop:
-                continue
-
-            comp_sim = fuzz.ratio(rows[i]["clean_company"], rows[j]["clean_company"])
-            title_sim = fuzz.ratio(rows[i]["clean_title"], rows[j]["clean_title"])
-
-            if comp_sim >= threshold and title_sim >= threshold:
-                indices_to_drop.add(j)
-
-    cleaned_df = df.drop(index=list(indices_to_drop)).copy()
-    cleaned_df.drop(columns=["clean_title", "clean_company"], inplace=True)
-    return cleaned_df
-
-def calculate_match_score(df: pd.DataFrame, target_keywords_str: str, exclude_keywords_str: str) -> pd.DataFrame:
-    """Menghitung tingkat kecocokan skill dan menyaring kata kunci yang dihindari."""
-    if df.empty:
-        return df
-
-    target_keywords = [k.strip() for k in target_keywords_str.split(",") if k.strip()]
-    exclude_keywords = [k.strip().lower() for k in exclude_keywords_str.split(",") if k.strip()]
-
-    # Filter Exclude Keywords
-    if exclude_keywords:
-        pattern = "|".join([re.escape(k) for k in exclude_keywords])
-        df = df[~df["title"].astype(str).str.lower().str.contains(pattern, regex=True)].copy()
-
-    if not target_keywords or df.empty:
-        df["Match Score"] = 100
-        df["Matched Skills"] = "Semua Tampil"
-        return df
-
+    target_skills = [s.strip().lower() for s in target_skills_str.split(",") if s.strip()]
+    exclude_skills = [s.strip().lower() for s in exclude_skills_str.split(",") if s.strip()]
+    
     scores = []
     matched_list = []
-
+    priority_list = []
+    summary_match_list = []
+    summary_detail_list = []
+    
     for _, row in df.iterrows():
-        title = str(row.get("title", "")).lower()
-        desc = str(row.get("description", "")).lower()
-
-        found_in_title = 0
-        found_in_desc = 0
-        matched_words = []
-
-        for kw in target_keywords:
-            kw_clean = kw.lower()
-            pattern = r'\b' + re.escape(kw_clean) + r'\b'
-            
-            in_t = bool(re.search(pattern, title))
-            in_d = bool(re.search(pattern, desc))
-
-            if in_t or in_d:
-                matched_words.append(kw)
-                if in_t:
-                    found_in_title += 1
-                elif in_d:
-                    found_in_desc += 1
-
-        total_possible = len(target_keywords) * 2
-        earned = (found_in_title * 2) + (found_in_desc * 1)
-        score_percentage = int((earned / total_possible) * 100) if total_possible > 0 else 0
+        desc = f"{row.get('title', '')} {row.get('description', '')}".lower()
         
-        scores.append(score_percentage)
-        matched_list.append(", ".join(matched_words) if matched_words else "Tidak ada")
-
+        # Penalti kata kunci yang dihindari
+        has_exclude = any(re.search(rf"\b{re.escape(exc)}\b", desc) for exc in exclude_skills)
+        if has_exclude:
+            scores.append(0)
+            matched_list.append("Dilewati (Ada kata yang dihindari)")
+            priority_list.append("⚪ Low")
+            summary_match_list.append("⚪ Low (0%) • Disaring")
+            summary_detail_list.append(f"{row.get('location', 'N/A')} | {get_city_financial_info(row.get('location'))}")
+            continue
+            
+        if not target_skills:
+            score = 50
+            matched = ["Semua Lowongan"]
+        else:
+            matches = [skill for skill in target_skills if re.search(rf"\b{re.escape(skill)}\b", desc)]
+            score = int((len(matches) / len(target_skills)) * 100)
+            matched = matches if matches else ["Tidak ada skill cocok"]
+            
+        scores.append(score)
+        matched_str = ", ".join(matched)
+        matched_list.append(matched_str)
+        
+        # Tagging Prioritas (High/Medium/Low)
+        form_type = row.get("Form Type", "")
+        work_type = row.get("Work Type", "")
+        loc = row.get("location", "Indonesia")
+        
+        if score >= 70 and form_type == "⚡ Quick Apply (ATS)":
+            prio = "🟢 High"
+        elif score >= 50:
+            prio = "🟡 Medium"
+        else:
+            prio = "⚪ Low"
+            
+        priority_list.append(prio)
+        
+        # Kolom Ringkasan Mobile Layout
+        summary_match_list.append(f"{prio} ({score}%) • {form_type}")
+        
+        salary_info = extract_real_salary(row.get("description", ""))
+        fin_info = get_city_financial_info(loc)
+        summary_detail_list.append(f"{work_type} • {loc}\n{salary_info} | {fin_info}")
+        
     df["Match Score"] = scores
     df["Matched Skills"] = matched_list
-    df = df.sort_values(by="Match Score", ascending=False)
-    return df
+    df["Prioritas"] = priority_list
+    df["Rekomendasi & Match"] = summary_match_list
+    df["Detail & Finansial"] = summary_detail_list
+    
+    return df.sort_values(by="Match Score", ascending=False)
