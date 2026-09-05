@@ -100,9 +100,6 @@ with st.expander("❓ **Petunjuk Penggunaan (Klik Untuk Membaca)**", expanded=Fa
     3. Masukkan **Target Skill** kamu. Aplikasi akan menghitung persen kecocokan (Match Score).
     4. Klik **🔍 Cari Pekerjaan**.
     5. **Centang Status Lamaran:** Kamu bisa menandai lowongan yang sudah kamu lamar langsung di tabel!
-    
-    💡 **Penting untuk Calon Perantau:**
-    Cek kalkulasi biaya hidup & simulasi merantau di **[Nafkah - Kalkulator Merantau](https://nafkah.adenaufal.com/)**.
     """)
 
 tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
@@ -110,7 +107,6 @@ tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
 # ==================== TAB 1: CARI PEKERJAAN ====================
 with tab1:
     settings = render_search_settings()
-
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
         search_clicked = st.button("🔍 Cari Pekerjaan", type="primary", use_container_width=True)
@@ -173,7 +169,7 @@ with tab1:
             st.session_state.raw_jobs = clean_jobs
             st.session_state.search_executed = True
 
-    # --- TAMPILAN HASIL (STATE DRIVEN) ---
+    # --- TAMPILAN HASIL ---
     if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
         jobs_to_display = calculate_match_score(
             st.session_state.raw_jobs.copy(), 
@@ -193,22 +189,24 @@ with tab1:
         if filter_work and "Work Type" in jobs_to_display.columns:
             jobs_to_display = jobs_to_display[jobs_to_display["Work Type"].isin(filter_work)]
         if filter_ats_only and "Form Type" in jobs_to_display.columns:
-            jobs_to_display = jobs_to_display[jobs_to_display["Form Type"] == "⚡ Quick Apply (ATS)"]
+            jobs_to_display = jobs_to_display[jobs_to_display["Form Type"] == "⚡ ATS"]
 
         st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
 
-        # TABEL INTERAKTIF TRACKER (AMUNISI SAFEGUARD DENGAN FALLBACK)
-        desired_cols = ["Sudah Dilamar", "title", "company", "Rekomendasi & Match", "Detail & Finansial", "job_url"]
+        # TABEL INTERAKTIF TRACKER (Kolom Rapi + Timestamp)
+        desired_cols = ["Sudah Dilamar", "date_posted", "title", "company", "Match Score", "Form Type", "Detail & Finansial", "job_url"]
         display_cols = [c for c in desired_cols if c in jobs_to_display.columns]
 
         edited_df = st.data_editor(
             jobs_to_display[display_cols],
             column_config={
                 "Sudah Dilamar": st.column_config.CheckboxColumn("Status", help="Centang jika sudah dilamar", default=False),
+                "date_posted": "Tanggal Posting",
                 "title": "Posisi Pekerjaan",
                 "company": "Perusahaan",
-                "Rekomendasi & Match": "Match & Format",
-                "Detail & Finansial": "Sistem, Lokasi & UMR",
+                "Match Score": st.column_config.ProgressColumn("Match", format="%d%%", min_value=0, max_value=100),
+                "Form Type": "Format",
+                "Detail & Finansial": "Lokasi & UMR (Nafkah)",
                 "job_url": st.column_config.LinkColumn("Lamaran", display_text="Lamar ↗️")
             },
             use_container_width=True,
@@ -219,13 +217,14 @@ with tab1:
         if edited_df is not None and "Sudah Dilamar" in edited_df.columns:
             st.session_state.raw_jobs.update(edited_df[["Sudah Dilamar"]])
 
-        # DOWNLOAD CSV DENGAN STATUS TRACKER
+        # DOWNLOAD CSV DENGAN STATUS TRACKER (ENCODING UTF-8-SIG UNTUK EXCEL EMOJI FIX)
         loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] else "anywhere"
         search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "all_jobs"
         timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
         csv_filename = f"jobs_tracker_{search_part}_{loc_part}_{timestamp}.csv"
 
-        csv_bytes = edited_df.to_csv(index=False).encode("utf-8")
+        # utf-8-sig memastikan logo/emoji tidak hancur saat CSV dibuka di Microsoft Excel
+        csv_bytes = edited_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 Download Tracker Lamaran (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
 
         if settings["google_enabled"]:
