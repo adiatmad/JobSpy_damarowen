@@ -187,9 +187,9 @@ with tab1:
 
         st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
 
-        # SUSUNAN KOLOM BERSIH TANPA EMOJI, DENGAN TIMESTAMP
-        desired_cols = ["Sudah Dilamar", "date_posted", "Match", "title", "company", "Lokasi & Gaji", "Acuan Finansial", "job_url"]
-        display_cols = [c for c in desired_cols if c in jobs_to_display.columns]
+        # TAMPILAN UI (Tetap Ringkas)
+        ui_cols = ["Sudah Dilamar", "date_posted", "Match", "title", "company", "Lokasi & Gaji", "Acuan Finansial", "job_url"]
+        display_cols = [c for c in ui_cols if c in jobs_to_display.columns]
 
         edited_df = st.data_editor(
             jobs_to_display[display_cols],
@@ -208,21 +208,46 @@ with tab1:
             key="job_tracker_editor"
         )
 
+        # Update Session State dan Frame Aktif berdasarkan centangan pengguna
         if edited_df is not None and "Sudah Dilamar" in edited_df.columns:
             st.session_state.raw_jobs.update(edited_df[["Sudah Dilamar"]])
+            jobs_to_display.update(edited_df[["Sudah Dilamar"]])
+
+        # --- LOGIKA EKSPOR CSV BERSIH ---
+        export_raw_cols = [
+            "Sudah Dilamar", "date_posted", "Match Score (Int)", "title", 
+            "company", "location", "Work Type", "Gaji Asli", "Info UMR", 
+            "Est. Biaya Hidup", "job_url", "description"
+        ]
+        
+        # Pastikan kolom tersedia sebelum ekspor
+        valid_export_cols = [c for c in export_raw_cols if c in jobs_to_display.columns]
+        export_df = jobs_to_display[valid_export_cols].copy()
+
+        # Ubah nama kolom agar cantik di Excel
+        rename_map = {
+            "date_posted": "Tanggal Posting",
+            "Match Score (Int)": "Match Score",
+            "title": "Posisi",
+            "company": "Perusahaan",
+            "location": "Lokasi",
+            "Work Type": "Sistem Kerja",
+            "job_url": "Link Lamaran",
+            "description": "Deskripsi Lengkap"
+        }
+        export_df.rename(columns=rename_map, inplace=True)
 
         # PENAMAAN CSV DETAIL DENGAN PARAMETER LENGKAP
-        keyword_str = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "semua_posisi"
-        loc_str = settings["location"].strip().replace(" ", "_") if settings["location"] else "semua_lokasi"
-        hours_str = f"{settings['hours_old']}jam" if settings['hours_old'] > 0 else "semua_waktu"
+        keyword_str = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "SemuaPosisi"
+        loc_str = settings["location"].strip().replace(" ", "_") if settings["location"] else "SemuaLokasi"
+        hours_str = f"{settings['hours_old']}jam" if settings['hours_old'] > 0 else "semuawaktu"
         limit_str = f"{settings['results_wanted']}limit"
         timestamp_str = datetime.now().strftime("%Y-%b-%d_%H%M")
         
         csv_filename = f"Tracker_{keyword_str}_{loc_str}_{hours_str}_{limit_str}_{timestamp_str}.csv"
 
-        # Menggunakan UTF-8-SIG agar file tidak hancur karakternya saat dibuka Excel
-        csv_bytes = edited_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 Download Data Tracker (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
+        csv_bytes = export_df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 Download Data Tracker (CSV Full)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
 
         if settings["google_enabled"]:
             st.divider()
