@@ -43,24 +43,24 @@ def fetch_nafkah_data() -> dict:
 
 def get_city_financial_info(location_str: str) -> str:
     if not location_str or pd.isna(location_str):
-        return "📍 Lokasi tak terdeteksi"
+        return "Lokasi tidak diketahui"
     
     loc_clean = str(location_str).lower()
     if "remote" in loc_clean:
-        return "🌐 Full Remote (Bebas Biaya Hidup)"
+        return "Remote (Biaya hidup bervariasi)"
     
     nafkah_db = fetch_nafkah_data()
     for city_key, info in nafkah_db.items():
         if city_key in loc_clean:
             umr_fmt = f"Rp {info['umr']/1e6:.2f}M" if info['umr'] else "-"
             cost_fmt = f"Rp {info['cost']/1e6:.2f}M" if info['cost'] else "-"
-            return f"💰 UMR {umr_fmt} | Est. Hidup ~{cost_fmt}"
+            return f"UMR {umr_fmt} | Est. Hidup {cost_fmt}"
     
-    return "💡 Cek Biaya di Nafkah"
+    return "Cek acuan di Nafkah"
 
 def extract_real_salary(description: str) -> str:
     if not description or pd.isna(description):
-        return "🔒 Gaji Dirahasiakan"
+        return "Gaji dirahasiakan"
     patterns = [
         r"(?:rp|IDR)\s?[\d\.\,]+\s?\-\s?(?:rp|IDR)?\s?[\d\.\,]+",
         r"\b\d{1,2}\s?-\s?\d{1,2}\s?(?:juta|jt)\b",
@@ -68,8 +68,8 @@ def extract_real_salary(description: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, str(description), re.IGNORECASE)
         if match:
-            return f"💰 {match.group(0)}"
-    return "🔒 Gaji Dirahasiakan"
+            return f"{match.group(0)}"
+    return "Gaji dirahasiakan"
 
 def validate_jobs(df: pd.DataFrame, hours_old: int = 0) -> pd.DataFrame:
     if df is None or df.empty:
@@ -79,7 +79,6 @@ def validate_jobs(df: pd.DataFrame, hours_old: int = 0) -> pd.DataFrame:
     valid_df["title"] = valid_df["title"].astype(str).str.strip()
     valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
     
-    # PERBAIKAN: Menarik dan merapikan kolom timestamp/date_posted
     if "date_posted" in valid_df.columns:
         valid_df["date_posted"] = pd.to_datetime(valid_df["date_posted"], errors="coerce").dt.strftime("%Y-%m-%d")
         valid_df["date_posted"] = valid_df["date_posted"].fillna("Unknown")
@@ -105,32 +104,21 @@ def deduplicate_jobs(df: pd.DataFrame, threshold: int = 85) -> pd.DataFrame:
             deduped_rows.append(row)
     return pd.DataFrame(deduped_rows)
 
-def detect_ats_friendly(url: str) -> str:
-    if not url or pd.isna(url):
-        return "📋 Form Standar"
-    url_str = str(url).lower()
-    ats_domains = ["greenhouse.io", "lever.co", "workable.com", "bamboohr.com", "ashbyhq.com"]
-    if any(domain in url_str for domain in ats_domains):
-        return "⚡ ATS"
-    return "📋 Form Standar"
-
 def categorize_work_type(row) -> str:
     text = f"{row.get('title', '')} {row.get('location', '')} {row.get('description', '')}".lower()
     if "remote" in text or row.get("is_remote") is True:
-        return "🌐 Remote"
+        return "Remote"
     elif "hybrid" in text:
-        return "🏢 Hybrid"
-    return "📍 On-site"
+        return "Hybrid"
+    return "On-site"
 
 def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skills_str: str = "") -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
     
     df = df.copy()
-    if "Form Type" not in df.columns:
-        df["Form Type"] = "📋 Form Standar"
     if "Work Type" not in df.columns:
-        df["Work Type"] = "📍 On-site"
+        df["Work Type"] = "On-site"
     if "Sudah Dilamar" not in df.columns:
         df["Sudah Dilamar"] = False
 
@@ -138,7 +126,9 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
     exclude_skills = [s.strip().lower() for s in exclude_skills_str.split(",") if s.strip()]
     
     scores = []
-    summary_detail_list = []
+    scores_str = []
+    summary_loc_salary = []
+    summary_financials = []
     
     for _, row in df.iterrows():
         desc = f"{row.get('title', '')} {row.get('description', '')}".lower()
@@ -146,7 +136,9 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
         has_exclude = any(re.search(rf"\b{re.escape(exc)}\b", desc) for exc in exclude_skills)
         if has_exclude:
             scores.append(0)
-            summary_detail_list.append(f"{row.get('location', 'Indonesia')} | Disaring")
+            scores_str.append("0%")
+            summary_loc_salary.append(f"{row.get('location', 'Indonesia')} | Disaring")
+            summary_financials.append("-")
             continue
             
         if not target_skills:
@@ -156,16 +148,19 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
             score = int((len(matches) / len(target_skills)) * 100)
             
         scores.append(score)
+        scores_str.append(f"{score}%")
         
-        work_type = row.get("Work Type", "📍 On-site")
+        work_type = row.get("Work Type", "On-site")
         loc = row.get("location", "Indonesia")
         salary_info = extract_real_salary(row.get("description", ""))
         fin_info = get_city_financial_info(loc)
         
-        # Format baru: lebih bersih
-        summary_detail_list.append(f"{work_type} • {loc}\n{salary_info} | {fin_info}")
+        summary_loc_salary.append(f"{work_type} | {loc}\n{salary_info}")
+        summary_financials.append(fin_info)
         
-    df["Match Score"] = scores
-    df["Detail & Finansial"] = summary_detail_list
+    df["Match Score (Int)"] = scores
+    df["Match"] = scores_str
+    df["Lokasi & Gaji"] = summary_loc_salary
+    df["Acuan Finansial"] = summary_financials
     
-    return df.sort_values(by="Match Score", ascending=False)
+    return df.sort_values(by="Match Score (Int)", ascending=False)
