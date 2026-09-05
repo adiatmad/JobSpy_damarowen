@@ -41,22 +41,23 @@ def fetch_nafkah_data() -> dict:
         pass
     return FALLBACK_NAFKAH
 
-def get_city_financial_info(location_str: str) -> str:
+def get_clean_financial_info(location_str: str) -> tuple[str, str]:
+    """Mengembalikan nilai UMR dan Cost bersih untuk kolom CSV."""
     if not location_str or pd.isna(location_str):
-        return "Lokasi tidak diketahui"
+        return "-", "-"
     
     loc_clean = str(location_str).lower()
     if "remote" in loc_clean:
-        return "Remote (Biaya hidup bervariasi)"
+        return "-", "-"
     
     nafkah_db = fetch_nafkah_data()
     for city_key, info in nafkah_db.items():
         if city_key in loc_clean:
             umr_fmt = f"Rp {info['umr']/1e6:.2f}M" if info['umr'] else "-"
             cost_fmt = f"Rp {info['cost']/1e6:.2f}M" if info['cost'] else "-"
-            return f"UMR {umr_fmt} | Est. Hidup {cost_fmt}"
-    
-    return "Cek acuan di Nafkah"
+            return umr_fmt, cost_fmt
+            
+    return "-", "-"
 
 def extract_real_salary(description: str) -> str:
     if not description or pd.isna(description):
@@ -130,6 +131,11 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
     summary_loc_salary = []
     summary_financials = []
     
+    # List baru untuk CSV bersih
+    gaji_asli_list = []
+    umr_list = []
+    cost_list = []
+    
     for _, row in df.iterrows():
         desc = f"{row.get('title', '')} {row.get('description', '')}".lower()
         
@@ -139,6 +145,9 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
             scores_str.append("0%")
             summary_loc_salary.append(f"{row.get('location', 'Indonesia')} | Disaring")
             summary_financials.append("-")
+            gaji_asli_list.append("-")
+            umr_list.append("-")
+            cost_list.append("-")
             continue
             
         if not target_skills:
@@ -152,15 +161,28 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
         
         work_type = row.get("Work Type", "On-site")
         loc = row.get("location", "Indonesia")
-        salary_info = extract_real_salary(row.get("description", ""))
-        fin_info = get_city_financial_info(loc)
         
-        summary_loc_salary.append(f"{work_type} | {loc}\n{salary_info}")
-        summary_financials.append(fin_info)
+        # Ekstraksi Data Murni
+        gaji_asli = extract_real_salary(row.get("description", ""))
+        umr_val, cost_val = get_clean_financial_info(loc)
+        
+        gaji_asli_list.append(gaji_asli)
+        umr_list.append(umr_val)
+        cost_list.append(cost_val)
+        
+        # Format UI Gabungan
+        summary_loc_salary.append(f"{work_type} | {loc}\n{gaji_asli}")
+        if umr_val != "-" or cost_val != "-":
+            summary_financials.append(f"UMR {umr_val} | Est. Hidup {cost_val}")
+        else:
+            summary_financials.append("Cek acuan di Nafkah" if "remote" not in loc.lower() else "Remote (Biaya bervariasi)")
         
     df["Match Score (Int)"] = scores
     df["Match"] = scores_str
     df["Lokasi & Gaji"] = summary_loc_salary
     df["Acuan Finansial"] = summary_financials
+    df["Gaji Asli"] = gaji_asli_list
+    df["Info UMR"] = umr_list
+    df["Est. Biaya Hidup"] = cost_list
     
     return df.sort_values(by="Match Score (Int)", ascending=False)
