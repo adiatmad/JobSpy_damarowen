@@ -8,7 +8,7 @@ from utils import (
 )
 from scraper import scrape_one_site_cached
 from pipeline import (
-    validate_jobs, deduplicate_jobs, detect_ats_friendly, categorize_work_type, calculate_match_score
+    validate_jobs, deduplicate_jobs, categorize_work_type, calculate_match_score
 )
 
 # Konfigurasi Halaman
@@ -63,7 +63,7 @@ def render_search_settings():
         proxy_input = st.text_input("Proxy Opsional (Pengguna Lanjutan)", value="", placeholder="http://user:pass@host:port")
 
         st.markdown("---")
-        google_enabled = st.checkbox("✨ Buatkan juga saran pencarian Google Jobs manual", value=False)
+        google_enabled = st.checkbox("✨ Buatkan saran pencarian Google Jobs manual", value=False)
         exclude_age = False
         custom_exclude = ""
         if google_enabled:
@@ -162,7 +162,6 @@ with tab1:
             valid_jobs = validate_jobs(combined_jobs, settings["hours_old"])
             clean_jobs = deduplicate_jobs(valid_jobs)
             
-            clean_jobs["Form Type"] = clean_jobs["job_url"].apply(detect_ats_friendly)
             clean_jobs["Work Type"] = clean_jobs.apply(categorize_work_type, axis=1)
             clean_jobs["Sudah Dilamar"] = False
             
@@ -179,35 +178,30 @@ with tab1:
 
         st.info("💡 **Tips Merantau:** Cek simulasi biaya hidup lengkap di **[Nafkah.adenaufal.com](https://nafkah.adenaufal.com/)**.")
 
-        # FILTER REAL-TIME
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            filter_work = st.multiselect("Filter Jenis Kerja", options=["🌐 Remote", "🏢 Hybrid", "📍 On-site"], default=["🌐 Remote", "🏢 Hybrid", "📍 On-site"])
-        with col_f2:
-            filter_ats_only = st.checkbox("Hanya tampilkan ⚡ Quick Apply (ATS)", value=False)
+            filter_work = st.multiselect("Filter Jenis Kerja", options=["Remote", "Hybrid", "On-site"], default=["Remote", "Hybrid", "On-site"])
 
         if filter_work and "Work Type" in jobs_to_display.columns:
             jobs_to_display = jobs_to_display[jobs_to_display["Work Type"].isin(filter_work)]
-        if filter_ats_only and "Form Type" in jobs_to_display.columns:
-            jobs_to_display = jobs_to_display[jobs_to_display["Form Type"] == "⚡ ATS"]
 
         st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
 
-        # TABEL INTERAKTIF TRACKER (Kolom Rapi + Timestamp)
-        desired_cols = ["Sudah Dilamar", "date_posted", "title", "company", "Match Score", "Form Type", "Detail & Finansial", "job_url"]
+        # SUSUNAN KOLOM BERSIH TANPA EMOJI, DENGAN TIMESTAMP
+        desired_cols = ["Sudah Dilamar", "date_posted", "Match", "title", "company", "Lokasi & Gaji", "Acuan Finansial", "job_url"]
         display_cols = [c for c in desired_cols if c in jobs_to_display.columns]
 
         edited_df = st.data_editor(
             jobs_to_display[display_cols],
             column_config={
                 "Sudah Dilamar": st.column_config.CheckboxColumn("Status", help="Centang jika sudah dilamar", default=False),
-                "date_posted": "Tanggal Posting",
-                "title": "Posisi Pekerjaan",
+                "date_posted": "Tgl Posting",
+                "Match": "Cocok",
+                "title": "Posisi",
                 "company": "Perusahaan",
-                "Match Score": st.column_config.ProgressColumn("Match", format="%d%%", min_value=0, max_value=100),
-                "Form Type": "Format",
-                "Detail & Finansial": "Lokasi & UMR (Nafkah)",
-                "job_url": st.column_config.LinkColumn("Lamaran", display_text="Lamar ↗️")
+                "Lokasi & Gaji": "Detail Lokasi & Gaji",
+                "Acuan Finansial": "Biaya Hidup (Nafkah)",
+                "job_url": st.column_config.LinkColumn("Tindakan", display_text="Lamar ↗")
             },
             use_container_width=True,
             hide_index=True,
@@ -217,15 +211,18 @@ with tab1:
         if edited_df is not None and "Sudah Dilamar" in edited_df.columns:
             st.session_state.raw_jobs.update(edited_df[["Sudah Dilamar"]])
 
-        # DOWNLOAD CSV DENGAN STATUS TRACKER (ENCODING UTF-8-SIG UNTUK EXCEL EMOJI FIX)
-        loc_part = settings["location"].strip().replace(" ", "_") if settings["location"] else "anywhere"
-        search_part = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "all_jobs"
-        timestamp = datetime.now().strftime("%Y-%b-%d_%H%M")
-        csv_filename = f"jobs_tracker_{search_part}_{loc_part}_{timestamp}.csv"
+        # PENAMAAN CSV DETAIL DENGAN PARAMETER LENGKAP
+        keyword_str = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "semua_posisi"
+        loc_str = settings["location"].strip().replace(" ", "_") if settings["location"] else "semua_lokasi"
+        hours_str = f"{settings['hours_old']}jam" if settings['hours_old'] > 0 else "semua_waktu"
+        limit_str = f"{settings['results_wanted']}limit"
+        timestamp_str = datetime.now().strftime("%Y-%b-%d_%H%M")
+        
+        csv_filename = f"Tracker_{keyword_str}_{loc_str}_{hours_str}_{limit_str}_{timestamp_str}.csv"
 
-        # utf-8-sig memastikan logo/emoji tidak hancur saat CSV dibuka di Microsoft Excel
+        # Menggunakan UTF-8-SIG agar file tidak hancur karakternya saat dibuka Excel
         csv_bytes = edited_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 Download Tracker Lamaran (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
+        st.download_button("📥 Download Data Tracker (CSV)", data=csv_bytes, file_name=csv_filename, mime="text/csv", use_container_width=True)
 
         if settings["google_enabled"]:
             st.divider()
