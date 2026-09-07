@@ -42,7 +42,6 @@ def fetch_nafkah_data() -> dict:
     return FALLBACK_NAFKAH
 
 def get_clean_financial_info(location_str: str) -> tuple[str, str]:
-    """Mengembalikan nilai UMR dan Cost bersih untuk kolom CSV."""
     if not location_str or pd.isna(location_str):
         return "-", "-"
     
@@ -113,7 +112,8 @@ def categorize_work_type(row) -> str:
         return "Hybrid"
     return "On-site"
 
-def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skills_str: str = "") -> pd.DataFrame:
+def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Mengolah data UI dan CSV tanpa menghitung Match Score."""
     if df is None or df.empty:
         return pd.DataFrame()
     
@@ -123,42 +123,13 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
     if "Sudah Dilamar" not in df.columns:
         df["Sudah Dilamar"] = False
 
-    target_skills = [s.strip().lower() for s in target_skills_str.split(",") if s.strip()]
-    exclude_skills = [s.strip().lower() for s in exclude_skills_str.split(",") if s.strip()]
-    
-    scores = []
-    scores_str = []
     summary_loc_salary = []
     summary_financials = []
-    
-    # List baru untuk CSV bersih
     gaji_asli_list = []
     umr_list = []
     cost_list = []
     
     for _, row in df.iterrows():
-        desc = f"{row.get('title', '')} {row.get('description', '')}".lower()
-        
-        has_exclude = any(re.search(rf"\b{re.escape(exc)}\b", desc) for exc in exclude_skills)
-        if has_exclude:
-            scores.append(0)
-            scores_str.append("0%")
-            summary_loc_salary.append(f"{row.get('location', 'Indonesia')} | Disaring")
-            summary_financials.append("-")
-            gaji_asli_list.append("-")
-            umr_list.append("-")
-            cost_list.append("-")
-            continue
-            
-        if not target_skills:
-            score = 50
-        else:
-            matches = [skill for skill in target_skills if re.search(rf"\b{re.escape(skill)}\b", desc)]
-            score = int((len(matches) / len(target_skills)) * 100)
-            
-        scores.append(score)
-        scores_str.append(f"{score}%")
-        
         work_type = row.get("Work Type", "On-site")
         loc = row.get("location", "Indonesia")
         
@@ -177,12 +148,10 @@ def calculate_match_score(df: pd.DataFrame, target_skills_str: str, exclude_skil
         else:
             summary_financials.append("Cek acuan di Nafkah" if "remote" not in loc.lower() else "Remote (Biaya bervariasi)")
         
-    df["Match Score (Int)"] = scores
-    df["Match"] = scores_str
     df["Lokasi & Gaji"] = summary_loc_salary
     df["Acuan Finansial"] = summary_financials
     df["Gaji Asli"] = gaji_asli_list
     df["Info UMR"] = umr_list
     df["Est. Biaya Hidup"] = cost_list
     
-    return df.sort_values(by="Match Score (Int)", ascending=False)
+    return df
