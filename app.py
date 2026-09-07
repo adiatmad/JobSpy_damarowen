@@ -8,7 +8,7 @@ from utils import (
 )
 from scraper import scrape_one_site_cached
 from pipeline import (
-    validate_jobs, deduplicate_jobs, categorize_work_type, calculate_match_score
+    validate_jobs, deduplicate_jobs, categorize_work_type, process_job_data
 )
 
 # Konfigurasi Halaman
@@ -32,19 +32,17 @@ if "search_executed" not in st.session_state:
 
 def render_search_settings():
     with st.expander("🔧 Pengaturan & Filter Pencarian", expanded=not st.session_state.search_executed):
-        st.caption("Atur kata kunci, lokasi, dan filter kecocokan skill kamu di sini.")
+        st.caption("Atur kata kunci dan lokasi pekerjaan yang ingin kamu cari.")
 
         col1, col2 = st.columns(2)
         with col1:
             search_term = st.text_input("Kata kunci / Posisi pekerjaan", value="Python Developer")
             location = st.text_input("Lokasi (opsional)", value="Indonesia")
-            target_keywords = st.text_input("Target Skill Kamu (pisahkan dengan koma)", value="Python, SQL, Docker")
 
         with col2:
             country_indeed = st.text_input("Negara (Indeed/Glassdoor)", value="Indonesia")
             results_wanted = st.slider("Hasil per situs", min_value=5, max_value=50, value=15, step=5)
             hours_old = st.number_input("Diposting dalam (jam)", min_value=0, value=72, step=24)
-            exclude_keywords = st.text_input("Kata kunci yang dihindari (pisahkan dengan koma)", value="Senior, Lead, Manager")
 
         st.caption("Pilih situs pekerjaan:")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
@@ -81,8 +79,6 @@ def render_search_settings():
             "hours_old": hours_old,
             "sites": sites,
             "proxy": proxy_input,
-            "target_keywords": target_keywords,
-            "exclude_keywords": exclude_keywords,
             "google_enabled": google_enabled,
             "exclude_age": exclude_age,
             "custom_exclude": custom_exclude,
@@ -90,19 +86,18 @@ def render_search_settings():
 
 # --- HEADER APLIKASI ---
 st.title("🔎 Teman Cari Kerja")
-st.caption("Alat bantu pencari kerja sederhana untuk mengumpulkan lowongan valid, membuang duplikat, dan mengukur kecocokan skill.")
+st.caption("Alat bantu pencari kerja sederhana untuk mengumpulkan lowongan valid dari berbagai portal secara cepat.")
 
-with st.expander("❓ **Petunjuk Penggunaan (Klik Untuk Membaca)**", expanded=False):
+with st.expander("❓ **Petunjuk Penggunaan**", expanded=False):
     st.markdown("""
     **Panduan Singkat:**
-    1. Buka expander **🔧 Pengaturan & Filter Pencarian** di bawah.
+    1. Buka **🔧 Pengaturan & Filter Pencarian**.
     2. Masukkan posisi yang dicari dan lokasi.
-    3. Masukkan **Target Skill** kamu. Aplikasi akan menghitung persen kecocokan (Match Score).
-    4. Klik **🔍 Cari Pekerjaan**.
-    5. **Centang Status Lamaran:** Kamu bisa menandai lowongan yang sudah kamu lamar langsung di tabel!
+    3. Klik **🔍 Cari Pekerjaan**.
+    4. Centang lowongan yang sudah dilamar, lalu **Download CSV** untuk menyimpannya sebagai catatan pribadi (termasuk full deskripsi pekerjaan).
     """)
 
-tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian"])
+tab1, tab2 = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan & Taktik Gerilya"])
 
 # ==================== TAB 1: CARI PEKERJAAN ====================
 with tab1:
@@ -143,18 +138,18 @@ with tab1:
 
         status_area.empty()
 
-        with st.expander("📊 Status Hasil Pencarian Per Situs", expanded=True):
+        with st.expander("📊 Status Hasil Pencarian", expanded=True):
             for site in sites:
                 kind, info = site_status[site]
                 if kind == "ok":
                     st.success(f"✅ **{site}**: {info} lowongan ditemukan")
                 elif kind == "empty":
-                    st.warning(f"⚠️ **{site}**: tidak ada lowongan ditemukan")
+                    st.warning(f"⚠️ **{site}**: tidak ada lowongan")
                 else:
                     st.error(f"❌ **{site}**: kendala — {info}")
 
         if not all_dfs:
-            st.warning("Tidak ada lowongan ditemukan. Coba perluas filter lokasi atau buka tab Panduan Pencarian.")
+            st.warning("Tidak ada lowongan ditemukan. Coba perluas lokasi atau buka tab Panduan & Taktik Gerilya.")
             st.session_state.raw_jobs = pd.DataFrame()
             st.session_state.search_executed = False
         else:
@@ -170,11 +165,7 @@ with tab1:
 
     # --- TAMPILAN HASIL ---
     if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
-        jobs_to_display = calculate_match_score(
-            st.session_state.raw_jobs.copy(), 
-            settings["target_keywords"], 
-            settings["exclude_keywords"]
-        )
+        jobs_to_display = process_job_data(st.session_state.raw_jobs.copy())
 
         st.info("💡 **Tips Merantau:** Cek simulasi biaya hidup lengkap di **[Nafkah.adenaufal.com](https://nafkah.adenaufal.com/)**.")
 
@@ -185,10 +176,10 @@ with tab1:
         if filter_work and "Work Type" in jobs_to_display.columns:
             jobs_to_display = jobs_to_display[jobs_to_display["Work Type"].isin(filter_work)]
 
-        st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik & terfilter.")
+        st.success(f"✅ Menampilkan **{len(jobs_to_display)}** lowongan unik.")
 
-        # TAMPILAN UI (Tetap Ringkas)
-        ui_cols = ["Sudah Dilamar", "date_posted", "Match", "title", "company", "Lokasi & Gaji", "Acuan Finansial", "job_url"]
+        # TAMPILAN UI
+        ui_cols = ["Sudah Dilamar", "date_posted", "title", "company", "Lokasi & Gaji", "Acuan Finansial", "job_url"]
         display_cols = [c for c in ui_cols if c in jobs_to_display.columns]
 
         edited_df = st.data_editor(
@@ -196,7 +187,6 @@ with tab1:
             column_config={
                 "Sudah Dilamar": st.column_config.CheckboxColumn("Status", help="Centang jika sudah dilamar", default=False),
                 "date_posted": "Tgl Posting",
-                "Match": "Cocok",
                 "title": "Posisi",
                 "company": "Perusahaan",
                 "Lokasi & Gaji": "Detail Lokasi & Gaji",
@@ -208,26 +198,22 @@ with tab1:
             key="job_tracker_editor"
         )
 
-        # Update Session State dan Frame Aktif berdasarkan centangan pengguna
         if edited_df is not None and "Sudah Dilamar" in edited_df.columns:
             st.session_state.raw_jobs.update(edited_df[["Sudah Dilamar"]])
             jobs_to_display.update(edited_df[["Sudah Dilamar"]])
 
         # --- LOGIKA EKSPOR CSV BERSIH ---
         export_raw_cols = [
-            "Sudah Dilamar", "date_posted", "Match Score (Int)", "title", 
-            "company", "location", "Work Type", "Gaji Asli", "Info UMR", 
-            "Est. Biaya Hidup", "job_url", "description"
+            "Sudah Dilamar", "date_posted", "title", "company", "location", 
+            "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", 
+            "job_url", "description"
         ]
         
-        # Pastikan kolom tersedia sebelum ekspor
         valid_export_cols = [c for c in export_raw_cols if c in jobs_to_display.columns]
         export_df = jobs_to_display[valid_export_cols].copy()
 
-        # Ubah nama kolom agar cantik di Excel
         rename_map = {
             "date_posted": "Tanggal Posting",
-            "Match Score (Int)": "Match Score",
             "title": "Posisi",
             "company": "Perusahaan",
             "location": "Lokasi",
@@ -237,7 +223,6 @@ with tab1:
         }
         export_df.rename(columns=rename_map, inplace=True)
 
-        # PENAMAAN CSV DETAIL DENGAN PARAMETER LENGKAP
         keyword_str = settings["search_term"].strip().replace(" ", "_") if settings["search_term"] else "SemuaPosisi"
         loc_str = settings["location"].strip().replace(" ", "_") if settings["location"] else "SemuaLokasi"
         hours_str = f"{settings['hours_old']}jam" if settings['hours_old'] > 0 else "semuawaktu"
@@ -259,23 +244,125 @@ with tab1:
             )
             st.code(google_query, language="text")
             encoded_q = urllib.parse.quote(google_query)
-            st.markdown(f"[🔗 Klik di sini untuk cari langsung di Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
+            st.markdown(f"[🔗 Cari langsung di Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
 
-# ==================== TAB 2: PANDUAN PENCARIAN ====================
+
+# ==================== TAB 2: PANDUAN PENCARIAN & TAKTIK ====================
 with tab2:
-    st.title("📖 Panduan Pencarian Pekerjaan")
-    st.markdown("**Teknik praktis mencari informasi pekerjaan valid dan katalog portal spesialis.**")
+    st.title("📖 Playbook & Taktik Gerilya")
+    st.markdown("**Gabungan sumber daya dan teknik mencari kerja di jalur tersembunyi (*Hidden Job Market*) dan Google Dorking.**")
 
-    with st.expander("🌐 **Mana Platform Remote yang Cocok Untukmu? (Katalog Spesialis)**", expanded=True):
-        st.markdown("**1. NGO & Non-Profit Internasional:** [Katalog NGO (Wasian)](https://wasian.my.id/remoteworks/?cat=NGO+%26+International+Development)")
-        st.markdown("**2. Tech & Software:** [Katalog Engineering (Wasian)](https://wasian.my.id/remoteworks/?cat=Engineering+%26+Tech)")
-        st.markdown("**3. Desain & Konten Kreatif:** [Katalog Creative (Wasian)](https://wasian.my.id/remoteworks/?cat=Design+%26+Creative)")
-        st.markdown("**4. Support & Operations:** [Katalog Customer Support (Wasian)](https://wasian.my.id/remoteworks/?cat=Customer+Support)")
+    st.subheader("Bagian 1: Direktori & Alat Bantu")
+    with st.expander("🌐 **Katalog Pekerjaan Spesialis (Wasian)**", expanded=True):
+        st.markdown("- **NGO & Non-Profit:** [Katalog NGO (Wasian)](https://wasian.my.id/remoteworks/?cat=NGO+%26+International+Development)")
+        st.markdown("- **Tech & Software:** [Katalog Engineering (Wasian)](https://wasian.my.id/remoteworks/?cat=Engineering+%26+Tech)")
+        st.markdown("- **Desain & Konten Kreatif:** [Katalog Creative (Wasian)](https://wasian.my.id/remoteworks/?cat=Design+%26+Creative)")
+        st.markdown("- **Support & Operations:** [Katalog Customer Support (Wasian)](https://wasian.my.id/remoteworks/?cat=Customer+Support)")
 
-    with st.expander("🌐 Komunitas & Alat Gratis Pendukung Karier", expanded=False):
-        st.markdown("[Nafkah - Kalkulator Merantau & Biaya Hidup](https://nafkah.adenaufal.com/)")
-        st.markdown("[Katalog Remote Works (Wasian)](https://wasian.my.id/remoteworks/)")
-        st.markdown("[Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
+    with st.expander("🛠️ **Komunitas & Kalkulator Pendukung**", expanded=False):
+        st.markdown("- [JobResume - Tool Gratis Bikin CV & Lacak Lamaran](https://jobresume.rndhri.com/)")
+        st.markdown("- [Nafkah - Kalkulator Merantau & Biaya Hidup](https://nafkah.adenaufal.com/)")
+        st.markdown("- [Katalog Remote Works (Wasian)](https://wasian.my.id/remoteworks/)")
+        st.markdown("- [Discord: Kabur Aja Dulu](https://discord.com/invite/KaburAjaDulu)")
+
+    st.markdown("---")
+    
+    st.subheader("Bagian 2: Menembus *Hidden Job Market*")
+    with st.expander("🕵️ **Query Sakti untuk X (Twitter) & Threads**", expanded=False):
+        st.markdown("""
+        Banyak lowongan bagus yang hanya diposting oleh Founder/Tech Lead di sosial media (tidak pernah masuk LinkedIn). 
+        Gunakan teks ini di kolom pencarian **X (Twitter)** atau **Threads**:
+        
+        *   **Bidikan "Direct Hiring" (Jalur Langsung):**
+            *   `"we are hiring" OR "i'm hiring" [Nama Posisi]`
+            *   `"join my team" [Nama Posisi]`
+        *   **Bidikan Lempar CV (Bypass ATS):**
+            *   `[Nama Posisi] "send your cv to" OR "kirim CV ke"`
+        *   **Bidikan Startup Lokal Indonesia:**
+            *   `"lagi cari" [Nama Posisi] (startup OR tech)`
+            *   `"dibutuhkan segera" [Nama Posisi] (WFH OR Remote)`
+        *   **Filter Negatif (Penting untuk X/Twitter agar bebas spam):**
+            *   Tambahkan `-loker -rt -giveaway -bot` di akhir pencarian agar bersih dari akun *bot*.
+        """)
+
+    with st.expander("⚠️ **Awas Jebakan 'Ghost Jobs' (Lowongan Zombie)**", expanded=False):
+        st.markdown("""
+        **Apa itu Ghost Jobs?**
+        Lowongan yang terus-menerus muncul sebagai "Baru" atau di-*repost* setiap beberapa minggu, tetapi perusahaan sebenarnya tidak sedang merekrut siapa-siapa (hanya untuk *branding* atau mengumpulkan CV).
+        
+        **Cara Menghindarinya:**
+        Jika kamu mengunduh Tracker CSV dari aplikasi ini dan menyadari ada satu posisi dari perusahaan yang sama terus muncul bulan demi bulan, **berhenti melamarnya**. Jangan buang waktumu.
+        """)
+        
+    with st.expander("🎯 **Mitos Tombol 'Easy Apply' & Strategi Cold Email**", expanded=False):
+        st.markdown("""
+        **Fakta Pahit:** Mengklik "Easy Apply" di LinkedIn berarti CV kamu akan ditumpuk bersama 1.000 pelamar lain. Persentase dibaca HRD sangat kecil.
+        
+        **Taktik Gerilya (Cold Outreach):**
+        1. Temukan lowongan yang cocok menggunakan alat ini.
+        2. Jangan langsung klik *Apply*. Buka halaman perusahaan di LinkedIn.
+        3. Cari menu **People/Orang**, ketikkan "HR", "Talent Acquisition", atau "[Nama Departemen] Manager".
+        4. Kirim *Direct Message* (DM) yang sopan dan langsung ke intinya (lampirkan portfolio). 
+        5. *Bypass the system.* Jadilah pelamar yang proaktif.
+        """)
+
+    st.markdown("---")
+    
+    st.subheader("Bagian 3: Senjata Rahasia Google Dorking")
+    with st.expander("🔍 **Trik Mencari Lowongan via Google Search (Bypass Portal)**", expanded=False):
+        st.markdown("""
+        Gunakan teknik **Google Dorking** ini di kolom pencarian `google.com` untuk menemukan info lowongan yang spesifik:
+
+        **1. Membidik Situs Pemerintah & Universitas:**
+        `site:go.id OR site:ac.id "lowongan kerja" OR "rekrutmen" OR "karir"`
+        
+        **2. Mencari di Kota Spesifik Tanpa Sampah Agregator (misal: Hindari Jobstreet):**
+        `("recruitment" OR "rekrutmen" OR "lowongan" OR "pekerjaan") AND ("Surabaya" OR "Gresik") (site:*.co.id OR site:*.com) -jobstreet`
+        
+        **3. Tembus Langsung ke Sistem ATS (BambooHR, Greenhouse, Lever, Workable):**
+        `inurl:bamboohr.com "jobs/view" "remote" after:2026-05-01`
+        *(Kamu bisa mengganti bamboohr.com dengan `greenhouse.io`, `jobs.lever.co`, atau `careers.workable.com`)*
+        
+        **4. Filter Waktu Lowongan (Hanya yang Baru Diposting):**
+        Tambahkan parameter `after:YYYY-MM-DD` di akhir pencarianmu (contoh: `after:2026-09-01`).
+        
+        **5. Trik Filter 24 Jam di LinkedIn URL:**
+        Saat mencari kerja di browser, kamu bisa tambahkan `&f_TPR=r86400` di akhir URL halaman pencarian LinkedIn. (86400 detik = 24 jam terakhir).
+        """)
+
+    st.markdown("---")
+    
+    st.subheader("Bagian 4: Evaluasi Lowongan Pakai AI")
+    with st.expander("🤖 **Prompt 'Career Advisor' (Copy-Paste ke ChatGPT/Claude)**", expanded=False):
+        st.markdown("Gunakan prompt kritis ini untuk membantu menganalisis apakah suatu lowongan layak dilamar atau justru *red flag*:")
+        st.code("""Bertindaklah sebagai career advisor yang kritis, objektif, dan evidence-based.
+Tujuanmu adalah membantuku mengambil keputusan nyata: apakah lowongan ini layak dikejar, layak dikejar dengan syarat, atau sebaiknya dihindari.
+
+Langkah 1 - Klarifikasi Konteks
+Ajukan pertanyaan terstruktur untuk mengumpulkan:
+- Detail lowongan (tanggung jawab, scope, ekspektasi hasil, tech stack, senioritas, kompensasi jika ada)
+- Profilku (pengalaman, skill, kekuatan, kelemahan, tujuan karier 1-3 tahun, batasan pribadi seperti gaji minimum, jam kerja, lokasi, dan risk tolerance)
+
+Langkah 2 - Diagnosis Posisi
+Susun daftar pertanyaan spesifik untuk menilai:
+- Kesesuaian skill teknis & non-teknis
+- Senioritas aktual vs klaim iklan
+- Beban kerja & metrik performa nyata
+- Risiko tersembunyi (ambiguity, underpaid, overworked, churn tinggi, struktur tim buruk)
+- Upside potensial (learning acceleration, exposure, reputasi, jalur promosi)
+
+Langkah 3 - Analisis Dua Arah
+Identifikasi gap di pihakku
+Identifikasi kemungkinan masalah di pihak lowongan
+Pisahkan mana yang bisa diperbaiki dengan upskilling dan mana yang bersifat struktural.
+
+Langkah 4 - Rekomendasi Konkret
+Berikan keputusan: Go / Conditional Go / No-Go
+Jelaskan alasan utama
+Jika ada gap di pihakku: jelaskan secara blak-blakan dan beri rencana peningkatan dengan prioritas
+Jika ada red flag struktural: jelaskan risiko jangka pendek & panjang
+Gunakan bahasa lugas, tidak normatif, tidak basa-basi.
+Tandai asumsi yang kamu buat dan tingkat keyakinanmu pada tiap kesimpulan.""", language="text")
 
 st.markdown("---")
 st.markdown("Ditenagai oleh [damarowen/JobSpy](https://github.com/damarowen/JobSpy) & [Nafkah](https://github.com/adenaufal/nafkah).")
