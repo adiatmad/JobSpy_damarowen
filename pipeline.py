@@ -1,7 +1,8 @@
 import re
-import requests
+from functools import lru_cache
+
 import pandas as pd
-import streamlit as st
+import requests
 from rapidfuzz import fuzz
 
 # URL Data Mentah Repo Nafkah
@@ -23,40 +24,46 @@ FALLBACK_NAFKAH = {
     "jawa timur": {"umr": 2165244, "cost": 1800000},
 }
 
-@st.cache_data(ttl=86400, show_spinner=False)
+
+@lru_cache(maxsize=1)
 def fetch_nafkah_data() -> dict:
+    """Fetch the Nafkah reference data once per process, with a safe fallback."""
     try:
         res = requests.get(NAFKAH_RAW_URL, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            formatted = {}
-            for item in data:
-                key = item.get("city", "").lower()
+        res.raise_for_status()
+        data = res.json()
+        formatted = {}
+        for item in data:
+            key = str(item.get("city", "")).strip().lower()
+            if key:
                 formatted[key] = {
                     "umr": item.get("umr", 0),
-                    "cost": item.get("estimated_cost", 0)
+                    "cost": item.get("estimated_cost", 0),
                 }
+        if formatted:
             return formatted
-    except Exception:
+    except (requests.RequestException, ValueError, TypeError):
         pass
     return FALLBACK_NAFKAH
+
 
 def get_clean_financial_info(location_str: str) -> tuple[str, str]:
     if not location_str or pd.isna(location_str):
         return "-", "-"
-    
+
     loc_clean = str(location_str).lower()
     if "remote" in loc_clean:
         return "-", "-"
-    
+
     nafkah_db = fetch_nafkah_data()
     for city_key, info in nafkah_db.items():
         if city_key in loc_clean:
-            umr_fmt = f"Rp {info['umr']/1e6:.2f}M" if info['umr'] else "-"
-            cost_fmt = f"Rp {info['cost']/1e6:.2f}M" if info['cost'] else "-"
+            umr_fmt = f"Rp {info['umr']/1e6:.2f}M" if info["umr"] else "-"
+            cost_fmt = f"Rp {info['cost']/1e6:.2f}M" if info["cost"] else "-"
             return umr_fmt, cost_fmt
-            
+
     return "-", "-"
+
 
 def extract_real_salary(description: str) -> str:
     if not description or pd.isna(description):
@@ -68,55 +75,78 @@ def extract_real_salary(description: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, str(description), re.IGNORECASE)
         if match:
-            return f"{match.group(0)}"
+            return match.group(0)
     return "Gaji dirahasiakan"
+
 
 def validate_jobs(df: pd.DataFrame, hours_old: int = 0) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
-    
-    valid_df = df.dropna(subset=["title", "job_url"]).copy()
+
+    required = ["title", "job_url"]
+    missing = [column for column in required if column not in df.columns]
+    if missing:
+        return pd.DataFrame()
+
+    valid_df = df.dropna(subset=required).copy()
     valid_df["title"] = valid_df["title"].astype(str).str.strip()
+    valid_df = valid_df[valid_df["title"] != ""]
     valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
-    
+
     if "date_posted" in valid_df.columns:
-        valid_df["date_posted"] = pd.to_datetime(valid_df["date_posted"], errors="coerce").dt.strftime("%Y-%m-%d")
+        valid_df["date_posted"] = pd.to_datetime(
+            valid_df["date_posted"], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
         valid_df["date_posted"] = valid_df["date_posted"].fillna("Unknown")
     else:
         valid_df["date_posted"] = "Unknown"
-        
-    return valid_df
+
+    return valid_df.reset_index(drop=True)
+
 
 def deduplicate_jobs(df: pd.DataFrame, threshold: int = 85) -> pd.DataFrame:
-    if df.empty:
+    """Remove near-duplicate title/company pairs while preserving first-seen order."""
+    if df is None or df.empty:
         return df
+
     deduped_rows = []
-    seen_keys = []
+    seen_keys = set()
+    fuzzy_keys = []
+
     for _, row in df.iterrows():
-        key = f"{row['title']} {row['company']}".lower()
-        is_duplicate = False
-        for seen in seen_keys:
-            if fuzz.ratio(key, seen) >= threshold:
-                is_duplicate = True
-                break
-        if not is_duplicate:
-            seen_keys.append(key)
-            deduped_rows.append(row)
-    return pd.DataFrame(deduped_rows)
+        title = str(row.get("title", "")).strip().lower()
+        company = str(row.get("company", "")).strip().lower()
+        key = f"{title} {company}".strip()
+
+        if not key:
+            continue
+        if key in seen_keys:
+            continue
+
+        if any(fuzz.ratio(key, seen) >= threshold for seen in fuzzy_keys):
+            continue
+
+        seen_keys.add(key)
+        fuzzy_keys.append(key)
+        deduped_rows.append(row)
+
+    return pd.DataFrame(deduped_rows).reset_index(drop=True)
+
 
 def categorize_work_type(row) -> str:
     text = f"{row.get('title', '')} {row.get('location', '')} {row.get('description', '')}".lower()
     if "remote" in text or row.get("is_remote") is True:
         return "Remote"
-    elif "hybrid" in text:
+    if "hybrid" in text:
         return "Hybrid"
     return "On-site"
 
+
 def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Mengolah data UI dan CSV tanpa menghitung Match Score."""
+    """Enrich job data for the UI and CSV export without calculating a match score."""
     if df is None or df.empty:
         return pd.DataFrame()
-    
+
     df = df.copy()
     if "Work Type" not in df.columns:
         df["Work Type"] = "On-site"
@@ -128,30 +158,30 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
     gaji_asli_list = []
     umr_list = []
     cost_list = []
-    
+
     for _, row in df.iterrows():
         work_type = row.get("Work Type", "On-site")
         loc = row.get("location", "Indonesia")
-        
-        # Ekstraksi Data Murni
+
         gaji_asli = extract_real_salary(row.get("description", ""))
         umr_val, cost_val = get_clean_financial_info(loc)
-        
+
         gaji_asli_list.append(gaji_asli)
         umr_list.append(umr_val)
         cost_list.append(cost_val)
-        
-        # Format UI Gabungan
+
         summary_loc_salary.append(f"{work_type} | {loc}\n{gaji_asli}")
         if umr_val != "-" or cost_val != "-":
             summary_financials.append(f"UMR {umr_val} | Est. Hidup {cost_val}")
         else:
-            summary_financials.append("Cek acuan di Nafkah" if "remote" not in loc.lower() else "Remote (Biaya bervariasi)")
-        
+            summary_financials.append(
+                "Cek acuan di Nafkah" if "remote" not in str(loc).lower() else "Remote (Biaya bervariasi)"
+            )
+
     df["Lokasi & Gaji"] = summary_loc_salary
     df["Acuan Finansial"] = summary_financials
     df["Gaji Asli"] = gaji_asli_list
     df["Info UMR"] = umr_list
     df["Est. Biaya Hidup"] = cost_list
-    
+
     return df
