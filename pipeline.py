@@ -1,7 +1,11 @@
-"""Framework-agnostic normalization and enrichment for job results."""
+"""Framework-agnostic normalization, freshness, deduplication and enrichment."""
+
+from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import requests
@@ -24,10 +28,32 @@ FALLBACK_NAFKAH = {
     "jawa timur": {"umr": 2165244, "cost": 1800000},
 }
 
+_TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "ref", "referrer", "trk", "trackingid",
+}
+
+
+def normalize_job_url(value: str) -> str:
+    """Normalize common tracking noise so the same job URL deduplicates reliably."""
+    if not value or pd.isna(value):
+        return ""
+    raw = str(value).strip()
+    try:
+        parts = urlsplit(raw)
+        if not parts.scheme or not parts.netloc:
+            return raw.rstrip("/").lower()
+        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k.lower() not in _TRACKING_PARAMS]
+        host = parts.netloc.lower()
+        path = parts.path.rstrip("/") or "/"
+        return urlunsplit((parts.scheme.lower(), host, path, urlencode(query), "")).lower()
+    except ValueError:
+        return raw.rstrip("/").lower()
+
 
 @lru_cache(maxsize=1)
 def fetch_nafkah_data() -> dict:
-    """Fetch reference data once per process; safely fall back offline."""
+    """Fetch Nafkah reference data once per process; safely fall back offline."""
     try:
         response = requests.get(NAFKAH_RAW_URL, timeout=5)
         response.raise_for_status()
@@ -73,51 +99,127 @@ def extract_real_salary(description: str) -> str:
     return "Gaji dirahasiakan"
 
 
-def validate_jobs(df: pd.DataFrame, hours_old: int = 0) -> pd.DataFrame:
-    """Normalize the minimum fields required by the application."""
+def _parse_posted_dates(series: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Return parsed UTC timestamps and an age estimate in hours."""
+    raw = series.astype(str).str.strip()
+    parsed = pd.to_datetime(raw, errors="coerce", utc=True, format="mixed")
+    date_only = raw.str.fullmatch(r"\d{4}-\d{2}-\d{2}").fillna(False)
+    # A date-only source means "posted sometime that day". Treating it as the
+    # end of the day avoids throwing away an otherwise valid recent listing.
+    effective = parsed.copy()
+    effective.loc[date_only & parsed.notna()] += pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    now = pd.Timestamp.now(tz="UTC")
+    age_hours = (now - effective).dt.total_seconds() / 3600
+    age_hours = age_hours.where(age_hours.notna(), pd.NA).clip(lower=0)
+    return parsed, age_hours
+
+
+def validate_jobs(
+    df: pd.DataFrame,
+    hours_old: int = 0,
+    *,
+    include_unknown_dates: bool = False,
+) -> pd.DataFrame:
+    """Normalize required fields and enforce the requested freshness window.
+
+    When ``hours_old`` is non-zero, listings without a trustworthy posting date
+    are excluded by default rather than pretending they satisfy the freshness
+    requirement. Callers can explicitly opt into unknown dates.
+    """
     if df is None or df.empty or "title" not in df.columns or "job_url" not in df.columns:
         return pd.DataFrame()
+
     valid_df = df.dropna(subset=["title", "job_url"]).copy()
     valid_df["title"] = valid_df["title"].astype(str).str.strip()
-    valid_df["job_url"] = valid_df["job_url"].astype(str).str.strip()
+    valid_df["job_url"] = valid_df["job_url"].map(normalize_job_url)
     valid_df = valid_df[(valid_df["title"] != "") & (valid_df["job_url"] != "")]
+
     if "company" not in valid_df.columns:
         valid_df["company"] = "Perusahaan Tidak Disebutkan"
     valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
+
+    if "location" not in valid_df.columns:
+        valid_df["location"] = ""
+    valid_df["location"] = valid_df["location"].fillna("").astype(str).str.strip()
+
     if "date_posted" in valid_df.columns:
-        parsed = pd.to_datetime(valid_df["date_posted"], errors="coerce", utc=True)
+        parsed, age_hours = _parse_posted_dates(valid_df["date_posted"])
         valid_df["date_posted"] = parsed.dt.strftime("%Y-%m-%d").fillna("Unknown")
+        valid_df["posted_age_hours"] = age_hours
     else:
         valid_df["date_posted"] = "Unknown"
+        valid_df["posted_age_hours"] = pd.NA
+
+    if hours_old and hours_old > 0:
+        known = valid_df["posted_age_hours"].notna()
+        fresh = known & (valid_df["posted_age_hours"] <= int(hours_old))
+        if include_unknown_dates:
+            fresh |= ~known
+        valid_df = valid_df[fresh].copy()
+
     return valid_df.reset_index(drop=True)
 
 
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value).strip().lower())
+
+
 def _job_key(row) -> str:
-    title = re.sub(r"\s+", " ", str(row.get("title", "")).strip().lower())
-    company = re.sub(r"\s+", " ", str(row.get("company", "")).strip().lower())
-    return f"{title}|{company}"
+    return f"{_clean_text(row.get('title', ''))}|{_clean_text(row.get('company', ''))}"
 
 
-def deduplicate_jobs(df: pd.DataFrame, threshold: int = 85) -> pd.DataFrame:
-    """Remove URL/exact duplicates, then use fuzzy matching as a fallback."""
+def _location_key(row) -> str:
+    return _clean_text(row.get("location", ""))
+
+
+def deduplicate_jobs(df: pd.DataFrame, threshold: int = 95) -> pd.DataFrame:
+    """Remove URL/exact duplicates and conservative near-duplicates.
+
+    Near-duplicate matching requires a very high title similarity and the same
+    normalized company. This deliberately avoids collapsing genuinely different
+    vacancies such as multiple Management Trainee departments at one company.
+    """
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
+
     kept = []
     seen_urls = set()
     seen_keys = set()
-    seen_pairs = []
+    retained = []
+
     for _, row in df.iterrows():
-        url = str(row.get("job_url", "")).strip().lower()
+        url = normalize_job_url(row.get("job_url", ""))
         key = _job_key(row)
+        title = _clean_text(row.get("title", ""))
+        company = _clean_text(row.get("company", ""))
+        location = _location_key(row)
+
         if not url or url in seen_urls or key in seen_keys:
             continue
-        if any(fuzz.ratio(key, previous) >= threshold for previous in seen_pairs):
+
+        duplicate = False
+        for previous_title, previous_company, previous_location in retained:
+            if company != previous_company:
+                continue
+            if fuzz.ratio(title, previous_title) < threshold:
+                continue
+            if location and previous_location and fuzz.ratio(location, previous_location) < 85:
+                continue
+            duplicate = True
+            break
+
+        if duplicate:
             continue
+
         kept.append(row)
         seen_urls.add(url)
         seen_keys.add(key)
-        seen_pairs.append(key)
-    return pd.DataFrame(kept).reset_index(drop=True)
+        retained.append((title, company, location))
+
+    result = pd.DataFrame(kept).reset_index(drop=True)
+    if not result.empty:
+        result["job_url"] = result["job_url"].map(normalize_job_url)
+    return result
 
 
 def categorize_work_type(row) -> str:
@@ -138,6 +240,7 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Work Type"] = df.apply(categorize_work_type, axis=1)
     if "Sudah Dilamar" not in df.columns:
         df["Sudah Dilamar"] = False
+
     summaries, financials, salaries, umrs, costs = [], [], [], [], []
     for _, row in df.iterrows():
         work_type = row.get("Work Type", "On-site")
@@ -153,6 +256,7 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
         salaries.append(salary)
         umrs.append(umr)
         costs.append(cost)
+
     df["Lokasi & Gaji"] = summaries
     df["Acuan Finansial"] = financials
     df["Gaji Asli"] = salaries
