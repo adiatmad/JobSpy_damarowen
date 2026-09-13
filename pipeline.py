@@ -12,26 +12,17 @@ from rapidfuzz import fuzz
 
 NAFKAH_RAW_URL = "https://raw.githubusercontent.com/adenaufal/nafkah/main/data/umr.json"
 FALLBACK_NAFKAH = {
-    "jakarta": {"umr": 5067381, "cost": 3500000},
-    "surabaya": {"umr": 4725479, "cost": 2800000},
-    "bandung": {"umr": 4209309, "cost": 2600000},
-    "medan": {"umr": 3769082, "cost": 2400000},
-    "semarang": {"umr": 3243969, "cost": 2200000},
-    "yogyakarta": {"umr": 2492997, "cost": 1800000},
-    "tangerang": {"umr": 4760289, "cost": 3000000},
-    "bekasi": {"umr": 5219263, "cost": 3200000},
-    "depok": {"umr": 4878612, "cost": 3000000},
-    "bogor": {"umr": 4813988, "cost": 2900000},
-    "jawa tengah": {"umr": 2036947, "cost": 1700000},
-    "jawa barat": {"umr": 2057495, "cost": 1800000},
+    "jakarta": {"umr": 5067381, "cost": 3500000}, "surabaya": {"umr": 4725479, "cost": 2800000},
+    "bandung": {"umr": 4209309, "cost": 2600000}, "medan": {"umr": 3769082, "cost": 2400000},
+    "semarang": {"umr": 3243969, "cost": 2200000}, "yogyakarta": {"umr": 2492997, "cost": 1800000},
+    "tangerang": {"umr": 4760289, "cost": 3000000}, "bekasi": {"umr": 5219263, "cost": 3200000},
+    "depok": {"umr": 4878612, "cost": 3000000}, "bogor": {"umr": 4813988, "cost": 2900000},
+    "jawa tengah": {"umr": 2036947, "cost": 1700000}, "jawa barat": {"umr": 2057495, "cost": 1800000},
     "jawa timur": {"umr": 2165244, "cost": 1800000},
 }
-
-_TRACKING_PARAMS = {
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "ref", "referrer", "trk", "trackingid",
-}
+_TRACKING_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid", "ref", "referrer", "trk", "trackingid"}
 _COMMON_COMPANY_WORDS = {"pt", "tbk", "inc", "ltd", "llc", "corp", "corporation", "co", "company"}
+_KNOWN_CITIES = ("jakarta", "surabaya", "bandung", "medan", "semarang", "yogyakarta", "tangerang", "bekasi", "depok", "bogor")
 
 
 def normalize_job_url(value: str) -> str:
@@ -44,9 +35,7 @@ def normalize_job_url(value: str) -> str:
         if not parts.scheme or not parts.netloc:
             return raw.rstrip("/").lower()
         query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k.lower() not in _TRACKING_PARAMS]
-        host = parts.netloc.lower()
-        path = parts.path.rstrip("/") or "/"
-        return urlunsplit((parts.scheme.lower(), host, path, urlencode(query), "")).lower()
+        return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/") or "/", urlencode(query), "")).lower()
     except ValueError:
         return raw.rstrip("/").lower()
 
@@ -58,11 +47,21 @@ def _fingerprint_text(value: str, *, company: bool = False) -> str:
     return " ".join(tokens)
 
 
+def _canonical_location(value: str) -> str:
+    text = _fingerprint_text(value)
+    for city in _KNOWN_CITIES:
+        if city in text.split():
+            return city
+    if "remote" in text:
+        return "remote"
+    return text
+
+
 def job_fingerprint(row) -> str:
-    """Stable, conservative identity for repost detection across different URLs."""
+    """Stable identity for conservative repost detection across different URLs."""
     title = _fingerprint_text(row.get("title", ""))
     company = _fingerprint_text(row.get("company", ""), company=True)
-    location = _fingerprint_text(row.get("location", ""))
+    location = _canonical_location(row.get("location", ""))
     if not title or not company:
         return ""
     return "|".join((title, company, location))
@@ -100,26 +99,22 @@ def get_clean_financial_info(location_str: str) -> tuple[str, str]:
 
 
 def _salary_midpoint(description: str) -> float | None:
-    """Return a conservative monthly salary midpoint in rupiah when parseable."""
     if not description or pd.isna(description):
         return None
     text = str(description).lower().replace(".", "").replace(",", "")
-    juta_ranges = re.findall(r"(\d+(?:\.\d+)?)\s*(?:-|–|sampai)\s*(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
-    if juta_ranges:
-        low, high = map(float, juta_ranges[0])
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|sampai)\s*(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
+    if match:
+        low, high = map(float, match.groups())
         return ((low + high) / 2) * 1_000_000
-    juta_single = re.search(r"(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
-    if juta_single:
-        return float(juta_single.group(1)) * 1_000_000
-
-    rp_ranges = re.findall(r"(?:rp|idr)\s*(\d+)\s*(?:-|–|sampai)\s*(?:rp|idr)?\s*(\d+)", text)
-    if rp_ranges:
-        low, high = map(float, rp_ranges[0])
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
+    if match:
+        return float(match.group(1)) * 1_000_000
+    match = re.search(r"(?:rp|idr)\s*(\d+)\s*(?:-|–|sampai)\s*(?:rp|idr)?\s*(\d+)", text)
+    if match:
+        low, high = map(float, match.groups())
         return (low + high) / 2
-    rp_single = re.search(r"(?:rp|idr)\s*(\d+)", text)
-    if rp_single:
-        return float(rp_single.group(1))
-    return None
+    match = re.search(r"(?:rp|idr)\s*(\d+)", text)
+    return float(match.group(1)) if match else None
 
 
 def extract_real_salary(description: str) -> str:
@@ -139,48 +134,34 @@ def extract_real_salary(description: str) -> str:
 
 
 def _parse_posted_dates(series: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """Return parsed timestamps and an age estimate in hours."""
     raw = series.astype(str).str.strip()
     parsed = pd.to_datetime(raw, errors="coerce", utc=True, format="mixed")
     date_only = raw.str.fullmatch(r"\d{4}-\d{2}-\d{2}").fillna(False)
     effective = parsed.copy()
     effective.loc[date_only & parsed.notna()] += pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
-    now = pd.Timestamp.now(tz="UTC")
-    age_hours = (now - effective).dt.total_seconds() / 3600
-    age_hours = age_hours.where(age_hours.notna(), pd.NA).clip(lower=0)
-    return parsed, age_hours
+    age_hours = (pd.Timestamp.now(tz="UTC") - effective).dt.total_seconds() / 3600
+    return parsed, age_hours.where(age_hours.notna(), pd.NA).clip(lower=0)
 
 
-def validate_jobs(
-    df: pd.DataFrame,
-    hours_old: int = 0,
-    *,
-    include_unknown_dates: bool = False,
-) -> pd.DataFrame:
-    """Normalize required fields and enforce the requested freshness window."""
+def validate_jobs(df: pd.DataFrame, hours_old: int = 0, *, include_unknown_dates: bool = False) -> pd.DataFrame:
     if df is None or df.empty or "title" not in df.columns or "job_url" not in df.columns:
         return pd.DataFrame()
-
     valid_df = df.dropna(subset=["title", "job_url"]).copy()
     valid_df["title"] = valid_df["title"].astype(str).str.strip()
     valid_df["job_url"] = valid_df["job_url"].map(normalize_job_url)
     valid_df = valid_df[(valid_df["title"] != "") & (valid_df["job_url"] != "")]
-
     if "company" not in valid_df.columns:
         valid_df["company"] = "Perusahaan Tidak Disebutkan"
     valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
     if "location" not in valid_df.columns:
         valid_df["location"] = ""
     valid_df["location"] = valid_df["location"].fillna("").astype(str).str.strip()
-
     if "date_posted" in valid_df.columns:
         parsed, age_hours = _parse_posted_dates(valid_df["date_posted"])
         valid_df["date_posted"] = parsed.dt.strftime("%Y-%m-%d").fillna("Unknown")
         valid_df["posted_age_hours"] = age_hours
     else:
-        valid_df["date_posted"] = "Unknown"
-        valid_df["posted_age_hours"] = pd.NA
-
+        valid_df["date_posted"], valid_df["posted_age_hours"] = "Unknown", pd.NA
     if hours_old and hours_old > 0:
         known = valid_df["posted_age_hours"].notna()
         fresh = known & (valid_df["posted_age_hours"] <= int(hours_old))
@@ -195,15 +176,14 @@ def _clean_text(value: str) -> str:
 
 
 def _job_key(row) -> str:
-    return f"{_clean_text(row.get('title', ''))}|{_clean_text(row.get('company', ''))}"
+    return job_fingerprint(row)
 
 
 def _location_key(row) -> str:
-    return _clean_text(row.get("location", ""))
+    return _canonical_location(row.get("location", ""))
 
 
 def deduplicate_jobs(df: pd.DataFrame, threshold: int = 95) -> pd.DataFrame:
-    """Remove URL/exact duplicates and conservative near-duplicates."""
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
     kept, seen_urls, seen_keys, retained = [], set(), set(), []
@@ -218,6 +198,8 @@ def deduplicate_jobs(df: pd.DataFrame, threshold: int = 95) -> pd.DataFrame:
             if company != previous_company or fuzz.ratio(title, previous_title) < threshold:
                 continue
             if location and previous_location and fuzz.ratio(location, previous_location) < 85:
+                continue
+            if not location or not previous_location:
                 continue
             duplicate = True
             break
@@ -247,10 +229,11 @@ def _financial_signal(location: str, description: str) -> str:
     if salary is None:
         return "⚪ Gaji tidak diketahui"
     umr_text, cost_text = get_clean_financial_info(location)
-    umr = next((float(x) * 1_000_000 for x in re.findall(r"Rp\s*([\d.]+)M", umr_text)), None)
-    cost = next((float(x) * 1_000_000 for x in re.findall(r"Rp\s*([\d.]+)M", cost_text)), None)
-    if not umr or not cost:
+    umr_match = re.search(r"Rp\s*([\d.]+)M", umr_text)
+    cost_match = re.search(r"Rp\s*([\d.]+)M", cost_text)
+    if not umr_match or not cost_match:
         return "⚪ Gaji terdeteksi; acuan lokasi tidak tersedia"
+    umr, cost = float(umr_match.group(1)) * 1_000_000, float(cost_match.group(1)) * 1_000_000
     surplus = salary - cost
     if salary < umr:
         level = "🔴 di bawah UMR"
@@ -262,7 +245,6 @@ def _financial_signal(location: str, description: str) -> str:
 
 
 def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare presentation/export fields without owning UI state."""
     if df is None or df.empty:
         return pd.DataFrame()
     df = df.copy()
@@ -270,30 +252,16 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
         df["Work Type"] = df.apply(categorize_work_type, axis=1)
     if "Sudah Dilamar" not in df.columns:
         df["Sudah Dilamar"] = False
-
     summaries, financials, salaries, umrs, costs, signals = [], [], [], [], [], []
     for _, row in df.iterrows():
-        work_type, loc = row.get("Work Type", "On-site"), row.get("location", "Indonesia")
-        description = row.get("description", "")
+        work_type, loc, description = row.get("Work Type", "On-site"), row.get("location", "Indonesia"), row.get("description", "")
         salary = extract_real_salary(description)
         umr, cost = get_clean_financial_info(loc)
         summaries.append(f"{work_type} | {loc}\n{salary}")
-        financials.append(
-            f"UMR {umr} | Est. Hidup {cost}"
-            if umr != "-" or cost != "-"
-            else ("Remote (Biaya bervariasi)" if "remote" in str(loc).lower() else "Cek acuan di Nafkah")
-        )
-        salaries.append(salary)
-        umrs.append(umr)
-        costs.append(cost)
-        signals.append(_financial_signal(loc, description))
-
-    df["Lokasi & Gaji"] = summaries
-    df["Acuan Finansial"] = financials
-    df["Gaji Asli"] = salaries
-    df["Info UMR"] = umrs
-    df["Est. Biaya Hidup"] = costs
-    df["Financial Signal"] = signals
+        financials.append(f"UMR {umr} | Est. Hidup {cost}" if umr != "-" or cost != "-" else ("Remote (Biaya bervariasi)" if "remote" in str(loc).lower() else "Cek acuan di Nafkah"))
+        salaries.append(salary); umrs.append(umr); costs.append(cost); signals.append(_financial_signal(loc, description))
+    df["Lokasi & Gaji"], df["Acuan Finansial"], df["Gaji Asli"] = summaries, financials, salaries
+    df["Info UMR"], df["Est. Biaya Hidup"], df["Financial Signal"] = umrs, costs, signals
     if "job_fingerprint" not in df.columns:
         df["job_fingerprint"] = df.apply(job_fingerprint, axis=1)
     return df
