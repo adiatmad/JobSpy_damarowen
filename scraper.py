@@ -1,5 +1,10 @@
+"""Framework-agnostic JobSpy source adapter with bounded retries."""
+
+from __future__ import annotations
+
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 
 import pandas as pd
 from jobspy import scrape_jobs
@@ -9,6 +14,13 @@ from utils import is_permanent_block
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 3
 PER_SITE_TIMEOUT_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class ScrapeResult:
+    dataframe: pd.DataFrame | None
+    error: str | None
+    attempts: int
 
 
 def build_kwargs_for_site(
@@ -35,7 +47,7 @@ def build_kwargs_for_site(
     return kwargs
 
 
-def scrape_one_site(
+def scrape_one_site_detailed(
     site: str,
     search_term: str,
     location: str,
@@ -43,11 +55,12 @@ def scrape_one_site(
     results_wanted: int,
     hours_old: int,
     proxy: str = None,
-) -> tuple[pd.DataFrame | None, str | None]:
-    """Scrape one source with bounded retries and a real timeout.
+) -> ScrapeResult:
+    """Scrape one source and return the real number of attempts.
 
-    This is deliberately framework-agnostic so the scraper can later run from
-    Streamlit, a CLI, a scheduled worker, or an API without importing Streamlit.
+    A timed-out thread cannot be force-killed safely in CPython. Therefore a
+    timeout is treated as a terminal attempt rather than starting another
+    potentially overlapping network request. Ordinary transient errors may retry.
     """
     last_error = None
     kwargs = build_kwargs_for_site(
@@ -60,12 +73,11 @@ def scrape_one_site(
         try:
             df = future.result(timeout=PER_SITE_TIMEOUT_SECONDS)
             executor.shutdown(wait=False, cancel_futures=False)
-            return df, None
+            return ScrapeResult(df, None, attempt)
         except FutureTimeoutError:
             last_error = f"waktu habis ({PER_SITE_TIMEOUT_SECONDS} detik)"
-            # Do not wait for a hung scraper here. The worker may still unwind in
-            # the background, but the caller gets its bounded response time.
             executor.shutdown(wait=False, cancel_futures=True)
+            return ScrapeResult(None, last_error, attempt)
         except Exception as exc:
             last_error = str(exc)
             executor.shutdown(wait=False, cancel_futures=True)
@@ -75,14 +87,31 @@ def scrape_one_site(
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_DELAY_SECONDS)
 
-    return None, last_error
+    return ScrapeResult(None, last_error, MAX_RETRIES if last_error else 0)
+
+
+def scrape_one_site(
+    site: str,
+    search_term: str,
+    location: str,
+    country_indeed: str,
+    results_wanted: int,
+    hours_old: int,
+    proxy: str = None,
+) -> tuple[pd.DataFrame | None, str | None]:
+    """Backward-compatible two-value adapter."""
+    result = scrape_one_site_detailed(
+        site=site,
+        search_term=search_term,
+        location=location,
+        country_indeed=country_indeed,
+        results_wanted=results_wanted,
+        hours_old=hours_old,
+        proxy=proxy,
+    )
+    return result.dataframe, result.error
 
 
 def scrape_one_site_cached(*args, **kwargs):
-    """Backward-compatible entry point for the existing Streamlit UI.
-
-    Caching belongs at the application/orchestration boundary, not inside the
-    scraper. Keeping this alias avoids breaking the current UI while the engine
-    is extracted incrementally.
-    """
+    """Backward-compatible entry point for older callers."""
     return scrape_one_site(*args, **kwargs)
