@@ -1,4 +1,4 @@
-"""SQLite persistence for the personal-first JobSpy mode."""
+"""SQLite persistence for personal-first JobSpy mode."""
 
 from __future__ import annotations
 
@@ -38,12 +38,18 @@ class JobStore:
                     description TEXT,
                     work_type TEXT,
                     application_status TEXT NOT NULL DEFAULT 'new',
+                    seen_count INTEGER NOT NULL DEFAULT 1,
                     first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
+            if "seen_count" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1")
+
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company_title ON jobs(company, title)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at)")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_seen_count ON jobs(seen_count)")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS search_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +75,7 @@ class JobStore:
             """)
 
     def upsert_jobs(self, jobs: pd.DataFrame) -> int:
-        """Insert new jobs and refresh last_seen_at for existing URLs."""
+        """Insert new jobs; refresh and increment seen_count for existing URLs."""
         if jobs is None or jobs.empty or "job_url" not in jobs.columns:
             return 0
         rows = []
@@ -86,15 +92,36 @@ class JobStore:
         with self._connect() as connection:
             connection.executemany("""
                 INSERT INTO jobs
-                    (job_url, title, company, location, date_posted, source, description, work_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (job_url, title, company, location, date_posted, source, description, work_type, seen_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(job_url) DO UPDATE SET
                     title=excluded.title, company=excluded.company, location=excluded.location,
                     date_posted=excluded.date_posted, source=excluded.source,
                     description=excluded.description, work_type=excluded.work_type,
+                    seen_count=jobs.seen_count + 1,
                     last_seen_at=CURRENT_TIMESTAMP
             """, rows)
         return len(rows)
+
+    def get_job_history(self, urls: list[str]) -> dict[str, dict]:
+        """Return prior sightings for ranking without mutating the database."""
+        if not urls:
+            return {}
+        placeholders = ",".join("?" for _ in urls)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT job_url, seen_count, first_seen_at, last_seen_at, application_status FROM jobs WHERE job_url IN ({placeholders})",
+                urls,
+            ).fetchall()
+        return {
+            row["job_url"]: {
+                "seen_count": row["seen_count"],
+                "first_seen_at": row["first_seen_at"],
+                "last_seen_at": row["last_seen_at"],
+                "application_status": row["application_status"],
+            }
+            for row in rows
+        }
 
     def update_application_status(self, job_url: str, status: str) -> None:
         if status not in ALLOWED_STATUSES:
@@ -141,4 +168,6 @@ class JobStore:
 
     def load_jobs(self) -> pd.DataFrame:
         with self._connect() as connection:
-            return pd.read_sql_query("SELECT * FROM jobs ORDER BY last_seen_at DESC", connection)
+            return pd.read_sql_query(
+                """SELECT * FROM jobs ORDER BY last_seen_at DESC""", connection
+            )
