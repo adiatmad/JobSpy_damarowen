@@ -1,6 +1,7 @@
 import pandas as pd
 
 import search_engine
+from scraper import ScrapeResult
 
 
 def test_classify_error():
@@ -10,16 +11,16 @@ def test_classify_error():
     assert search_engine.classify_error("connection reset by peer") == "NETWORK_ERROR"
 
 
-def test_search_sources_records_success_and_empty(monkeypatch):
+def test_search_sources_records_success_and_empty_and_attempts(monkeypatch):
     frames = {
         "indeed": pd.DataFrame([{"title": "GIS Analyst", "job_url": "https://example.com/1"}]),
         "linkedin": pd.DataFrame(),
     }
 
-    def fake_scrape_one_site(**kwargs):
-        return frames[kwargs["site"]], None
+    def fake_scrape_one_site_detailed(**kwargs):
+        return ScrapeResult(frames[kwargs["site"]], None, 1)
 
-    monkeypatch.setattr(search_engine, "scrape_one_site", fake_scrape_one_site)
+    monkeypatch.setattr(search_engine, "scrape_one_site_detailed", fake_scrape_one_site_detailed)
 
     result = search_engine.search_sources(
         ["indeed", "linkedin"],
@@ -34,9 +35,10 @@ def test_search_sources_records_success_and_empty(monkeypatch):
     assert [item.status for item in result.sources] == ["SUCCESS", "EMPTY"]
     assert result.sources[0].result_count == 1
     assert result.sources[1].result_count == 0
+    assert result.sources[0].attempts == 1
 
 
-def test_job_store_round_trip(tmp_path):
+def test_job_store_round_trip_and_seen_count(tmp_path):
     from storage import JobStore
 
     store = JobStore(tmp_path / "jobs.sqlite3")
@@ -56,9 +58,12 @@ def test_job_store_round_trip(tmp_path):
     )
 
     assert store.upsert_jobs(jobs) == 1
+    assert store.upsert_jobs(jobs) == 1
     loaded = store.load_jobs()
     assert len(loaded) == 1
     assert loaded.iloc[0]["application_status"] == "new"
+    assert loaded.iloc[0]["seen_count"] == 2
+    assert store.get_job_history(["https://example.com/1"])["https://example.com/1"]["seen_count"] == 2
 
     store.update_application_status("https://example.com/1", "shortlisted")
     assert store.load_jobs().iloc[0]["application_status"] == "shortlisted"
