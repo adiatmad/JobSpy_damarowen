@@ -30,6 +30,7 @@ class JobStore:
                 CREATE TABLE IF NOT EXISTS jobs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     job_url TEXT NOT NULL UNIQUE,
+                    job_fingerprint TEXT,
                     title TEXT,
                     company TEXT,
                     location TEXT,
@@ -46,10 +47,13 @@ class JobStore:
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
             if "seen_count" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1")
+            if "job_fingerprint" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN job_fingerprint TEXT")
 
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company_title ON jobs(company, title)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_seen_count ON jobs(seen_count)")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(job_fingerprint)")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS search_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,17 +88,18 @@ class JobStore:
             if not url:
                 continue
             rows.append((
-                url, str(row.get("title", "")), str(row.get("company", "")),
-                str(row.get("location", "")), str(row.get("date_posted", "")),
-                str(row.get("site", row.get("source", ""))), str(row.get("description", "")),
-                str(row.get("Work Type", "")),
+                url, str(row.get("job_fingerprint", "")), str(row.get("title", "")),
+                str(row.get("company", "")), str(row.get("location", "")),
+                str(row.get("date_posted", "")), str(row.get("site", row.get("source", ""))),
+                str(row.get("description", "")), str(row.get("Work Type", "")),
             ))
         with self._connect() as connection:
             connection.executemany("""
                 INSERT INTO jobs
-                    (job_url, title, company, location, date_posted, source, description, work_type, seen_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    (job_url, job_fingerprint, title, company, location, date_posted, source, description, work_type, seen_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(job_url) DO UPDATE SET
+                    job_fingerprint=excluded.job_fingerprint,
                     title=excluded.title, company=excluded.company, location=excluded.location,
                     date_posted=excluded.date_posted, source=excluded.source,
                     description=excluded.description, work_type=excluded.work_type,
@@ -110,15 +115,41 @@ class JobStore:
         placeholders = ",".join("?" for _ in urls)
         with self._connect() as connection:
             rows = connection.execute(
-                f"SELECT job_url, seen_count, first_seen_at, last_seen_at, application_status FROM jobs WHERE job_url IN ({placeholders})",
+                f"SELECT job_url, job_fingerprint, seen_count, first_seen_at, last_seen_at, application_status FROM jobs WHERE job_url IN ({placeholders})",
                 urls,
             ).fetchall()
         return {
             row["job_url"]: {
                 "seen_count": row["seen_count"],
+                "job_fingerprint": row["job_fingerprint"] or "",
                 "first_seen_at": row["first_seen_at"],
                 "last_seen_at": row["last_seen_at"],
                 "application_status": row["application_status"],
+            }
+            for row in rows
+        }
+
+    def get_fingerprint_history(self, fingerprints: list[str]) -> dict[str, dict]:
+        """Return identity history for conservative cross-URL repost detection."""
+        fingerprints = [item for item in fingerprints if item]
+        if not fingerprints:
+            return {}
+        placeholders = ",".join("?" for _ in fingerprints)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""SELECT job_fingerprint, COUNT(DISTINCT job_url) AS distinct_urls,
+                           MIN(first_seen_at) AS first_seen_at,
+                           MAX(last_seen_at) AS last_seen_at
+                    FROM jobs
+                    WHERE job_fingerprint IN ({placeholders})
+                    GROUP BY job_fingerprint""",
+                fingerprints,
+            ).fetchall()
+        return {
+            row["job_fingerprint"]: {
+                "distinct_urls": row["distinct_urls"],
+                "first_seen_at": row["first_seen_at"],
+                "last_seen_at": row["last_seen_at"],
             }
             for row in rows
         }
@@ -152,8 +183,7 @@ class JobStore:
                 (search_run_id, source, status, result_count, duration_ms, attempts, error, started_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    (run_id, item.source, item.status, item.result_count, item.duration_ms,
-                     item.attempts, item.error, item.started_at)
+                    (run_id, item.source, item.status, item.result_count, item.duration_ms, item.attempts, item.error, item.started_at)
                     for item in source_results
                 ],
             )
@@ -168,6 +198,4 @@ class JobStore:
 
     def load_jobs(self) -> pd.DataFrame:
         with self._connect() as connection:
-            return pd.read_sql_query(
-                """SELECT * FROM jobs ORDER BY last_seen_at DESC""", connection
-            )
+            return pd.read_sql_query("""SELECT * FROM jobs ORDER BY last_seen_at DESC""", connection)
