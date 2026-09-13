@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
 from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -32,6 +31,7 @@ _TRACKING_PARAMS = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "fbclid", "gclid", "ref", "referrer", "trk", "trackingid",
 }
+_COMMON_COMPANY_WORDS = {"pt", "tbk", "inc", "ltd", "llc", "corp", "corporation", "co", "company"}
 
 
 def normalize_job_url(value: str) -> str:
@@ -51,6 +51,23 @@ def normalize_job_url(value: str) -> str:
         return raw.rstrip("/").lower()
 
 
+def _fingerprint_text(value: str, *, company: bool = False) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    tokens = [token for token in text.split() if token and (not company or token not in _COMMON_COMPANY_WORDS)]
+    return " ".join(tokens)
+
+
+def job_fingerprint(row) -> str:
+    """Stable, conservative identity for repost detection across different URLs."""
+    title = _fingerprint_text(row.get("title", ""))
+    company = _fingerprint_text(row.get("company", ""), company=True)
+    location = _fingerprint_text(row.get("location", ""))
+    if not title or not company:
+        return ""
+    return "|".join((title, company, location))
+
+
 @lru_cache(maxsize=1)
 def fetch_nafkah_data() -> dict:
     """Fetch Nafkah reference data once per process; safely fall back offline."""
@@ -62,10 +79,7 @@ def fetch_nafkah_data() -> dict:
         for item in data:
             key = str(item.get("city", "")).strip().lower()
             if key:
-                formatted[key] = {
-                    "umr": item.get("umr", 0),
-                    "cost": item.get("estimated_cost", 0),
-                }
+                formatted[key] = {"umr": item.get("umr", 0), "cost": item.get("estimated_cost", 0)}
         return formatted or FALLBACK_NAFKAH
     except (requests.RequestException, ValueError, TypeError):
         return FALLBACK_NAFKAH
@@ -85,12 +99,37 @@ def get_clean_financial_info(location_str: str) -> tuple[str, str]:
     return "-", "-"
 
 
+def _salary_midpoint(description: str) -> float | None:
+    """Return a conservative monthly salary midpoint in rupiah when parseable."""
+    if not description or pd.isna(description):
+        return None
+    text = str(description).lower().replace(".", "").replace(",", "")
+    juta_ranges = re.findall(r"(\d+(?:\.\d+)?)\s*(?:-|–|sampai)\s*(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
+    if juta_ranges:
+        low, high = map(float, juta_ranges[0])
+        return ((low + high) / 2) * 1_000_000
+    juta_single = re.search(r"(\d+(?:\.\d+)?)\s*(?:juta|jt)", text)
+    if juta_single:
+        return float(juta_single.group(1)) * 1_000_000
+
+    rp_ranges = re.findall(r"(?:rp|idr)\s*(\d+)\s*(?:-|–|sampai)\s*(?:rp|idr)?\s*(\d+)", text)
+    if rp_ranges:
+        low, high = map(float, rp_ranges[0])
+        return (low + high) / 2
+    rp_single = re.search(r"(?:rp|idr)\s*(\d+)", text)
+    if rp_single:
+        return float(rp_single.group(1))
+    return None
+
+
 def extract_real_salary(description: str) -> str:
     if not description or pd.isna(description):
         return "Gaji dirahasiakan"
     patterns = [
         r"(?:rp|IDR)\s?[\d\.\,]+\s?[-–]\s?(?:rp|IDR)?\s?[\d\.\,]+",
         r"\b\d{1,2}\s?[-–]\s?\d{1,2}\s?(?:juta|jt)\b",
+        r"(?:rp|IDR)\s?[\d\.\,]+",
+        r"\b\d{1,2}\s?(?:juta|jt)\b",
     ]
     for pattern in patterns:
         match = re.search(pattern, str(description), re.IGNORECASE)
@@ -100,12 +139,10 @@ def extract_real_salary(description: str) -> str:
 
 
 def _parse_posted_dates(series: pd.Series) -> tuple[pd.Series, pd.Series]:
-    """Return parsed UTC timestamps and an age estimate in hours."""
+    """Return parsed timestamps and an age estimate in hours."""
     raw = series.astype(str).str.strip()
     parsed = pd.to_datetime(raw, errors="coerce", utc=True, format="mixed")
     date_only = raw.str.fullmatch(r"\d{4}-\d{2}-\d{2}").fillna(False)
-    # A date-only source means "posted sometime that day". Treating it as the
-    # end of the day avoids throwing away an otherwise valid recent listing.
     effective = parsed.copy()
     effective.loc[date_only & parsed.notna()] += pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
     now = pd.Timestamp.now(tz="UTC")
@@ -120,12 +157,7 @@ def validate_jobs(
     *,
     include_unknown_dates: bool = False,
 ) -> pd.DataFrame:
-    """Normalize required fields and enforce the requested freshness window.
-
-    When ``hours_old`` is non-zero, listings without a trustworthy posting date
-    are excluded by default rather than pretending they satisfy the freshness
-    requirement. Callers can explicitly opt into unknown dates.
-    """
+    """Normalize required fields and enforce the requested freshness window."""
     if df is None or df.empty or "title" not in df.columns or "job_url" not in df.columns:
         return pd.DataFrame()
 
@@ -137,7 +169,6 @@ def validate_jobs(
     if "company" not in valid_df.columns:
         valid_df["company"] = "Perusahaan Tidak Disebutkan"
     valid_df["company"] = valid_df["company"].fillna("Perusahaan Tidak Disebutkan").astype(str).str.strip()
-
     if "location" not in valid_df.columns:
         valid_df["location"] = ""
     valid_df["location"] = valid_df["location"].fillna("").astype(str).str.strip()
@@ -156,7 +187,6 @@ def validate_jobs(
         if include_unknown_dates:
             fresh |= ~known
         valid_df = valid_df[fresh].copy()
-
     return valid_df.reset_index(drop=True)
 
 
@@ -173,49 +203,30 @@ def _location_key(row) -> str:
 
 
 def deduplicate_jobs(df: pd.DataFrame, threshold: int = 95) -> pd.DataFrame:
-    """Remove URL/exact duplicates and conservative near-duplicates.
-
-    Near-duplicate matching requires a very high title similarity and the same
-    normalized company. This deliberately avoids collapsing genuinely different
-    vacancies such as multiple Management Trainee departments at one company.
-    """
+    """Remove URL/exact duplicates and conservative near-duplicates."""
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
-
-    kept = []
-    seen_urls = set()
-    seen_keys = set()
-    retained = []
-
+    kept, seen_urls, seen_keys, retained = [], set(), set(), []
     for _, row in df.iterrows():
         url = normalize_job_url(row.get("job_url", ""))
         key = _job_key(row)
-        title = _clean_text(row.get("title", ""))
-        company = _clean_text(row.get("company", ""))
-        location = _location_key(row)
-
+        title, company, location = _clean_text(row.get("title", "")), _clean_text(row.get("company", "")), _location_key(row)
         if not url or url in seen_urls or key in seen_keys:
             continue
-
         duplicate = False
         for previous_title, previous_company, previous_location in retained:
-            if company != previous_company:
-                continue
-            if fuzz.ratio(title, previous_title) < threshold:
+            if company != previous_company or fuzz.ratio(title, previous_title) < threshold:
                 continue
             if location and previous_location and fuzz.ratio(location, previous_location) < 85:
                 continue
             duplicate = True
             break
-
         if duplicate:
             continue
-
         kept.append(row)
         seen_urls.add(url)
         seen_keys.add(key)
         retained.append((title, company, location))
-
     result = pd.DataFrame(kept).reset_index(drop=True)
     if not result.empty:
         result["job_url"] = result["job_url"].map(normalize_job_url)
@@ -231,6 +242,25 @@ def categorize_work_type(row) -> str:
     return "On-site"
 
 
+def _financial_signal(location: str, description: str) -> str:
+    salary = _salary_midpoint(description)
+    if salary is None:
+        return "⚪ Gaji tidak diketahui"
+    umr_text, cost_text = get_clean_financial_info(location)
+    umr = next((float(x) * 1_000_000 for x in re.findall(r"Rp\s*([\d.]+)M", umr_text)), None)
+    cost = next((float(x) * 1_000_000 for x in re.findall(r"Rp\s*([\d.]+)M", cost_text)), None)
+    if not umr or not cost:
+        return "⚪ Gaji terdeteksi; acuan lokasi tidak tersedia"
+    surplus = salary - cost
+    if salary < umr:
+        level = "🔴 di bawah UMR"
+    elif surplus >= cost:
+        level = "🟢 kuat vs biaya hidup"
+    else:
+        level = "🟡 moderat vs biaya hidup"
+    return f"{level} · estimasi gaji {extract_real_salary(description)}"
+
+
 def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
     """Prepare presentation/export fields without owning UI state."""
     if df is None or df.empty:
@@ -241,11 +271,11 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
     if "Sudah Dilamar" not in df.columns:
         df["Sudah Dilamar"] = False
 
-    summaries, financials, salaries, umrs, costs = [], [], [], [], []
+    summaries, financials, salaries, umrs, costs, signals = [], [], [], [], [], []
     for _, row in df.iterrows():
-        work_type = row.get("Work Type", "On-site")
-        loc = row.get("location", "Indonesia")
-        salary = extract_real_salary(row.get("description", ""))
+        work_type, loc = row.get("Work Type", "On-site"), row.get("location", "Indonesia")
+        description = row.get("description", "")
+        salary = extract_real_salary(description)
         umr, cost = get_clean_financial_info(loc)
         summaries.append(f"{work_type} | {loc}\n{salary}")
         financials.append(
@@ -256,10 +286,14 @@ def process_job_data(df: pd.DataFrame) -> pd.DataFrame:
         salaries.append(salary)
         umrs.append(umr)
         costs.append(cost)
+        signals.append(_financial_signal(loc, description))
 
     df["Lokasi & Gaji"] = summaries
     df["Acuan Finansial"] = financials
     df["Gaji Asli"] = salaries
     df["Info UMR"] = umrs
     df["Est. Biaya Hidup"] = costs
+    df["Financial Signal"] = signals
+    if "job_fingerprint" not in df.columns:
+        df["job_fingerprint"] = df.apply(job_fingerprint, axis=1)
     return df
