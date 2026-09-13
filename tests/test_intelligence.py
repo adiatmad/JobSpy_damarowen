@@ -58,7 +58,6 @@ def test_validate_jobs_enforces_freshness_and_excludes_unknown_by_default():
         {"title": "Old", "company": "B", "job_url": "https://x/2", "date_posted": "2026-09-01"},
         {"title": "Unknown", "company": "C", "job_url": "https://x/3", "date_posted": None},
     ])
-    # Use a broad window so the test is independent of the exact current hour.
-    result = validate_jobs(jobs, hours_old=72 * 10)
+    result = validate_jobs(jobs, hours_old=24 * 30)
     assert set(result["title"]) == {"Fresh", "Old"}
     assert "Unknown" not in set(result["title"])
