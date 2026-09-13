@@ -1,6 +1,6 @@
 # JobSpy — Personal Job Intelligence
 
-JobSpy started as a Streamlit scraper. It is now being evolved into a **personal-first job-search intelligence tool**: discover jobs, normalize them, remember what has been seen, rank evidence-based matches, and track applications.
+JobSpy started as a Streamlit scraper. It is now being evolved into a **personal-first job-search intelligence tool**: discover jobs, normalize them, remember what has been seen, rank evidence-based matches, compare financial context, and track applications.
 
 The same core is designed to remain deployable at $0 for personal use and to be usable by others later without prematurely building a multi-user SaaS stack.
 
@@ -13,9 +13,11 @@ Search Engine
     ↓
 Source adapters / JobSpy
     ↓
-Validation + deduplication
+Validation + freshness + deduplication
     ↓
-Explainable ranking
+Explainable ranking + job memory
+    ↓
+Nafkah financial context
     ↓
 SQLite Job Memory
 ```
@@ -25,11 +27,15 @@ SQLite Job Memory
 - `app.py` — Streamlit presentation layer
 - `scraper.py` — framework-agnostic JobSpy execution, retry and timeout handling
 - `search_engine.py` — source orchestration and source-health reporting
-- `pipeline.py` — validation, deduplication and data enrichment
+- `pipeline.py` — validation, freshness filtering, URL normalization, deduplication and Nafkah enrichment
 - `intelligence.py` — deterministic, explainable job ranking
-- `storage.py` — SQLite persistence for jobs, application status and search/source history
+- `storage.py` — SQLite persistence for jobs, sightings, application status and search/source history
 - `utils.py` — presentation helpers and existing search utilities
 - `tests/` — automated regression tests
+
+## Runtime
+
+The current supported runtime is **Python 3.12**. `python-jobspy==1.1.82` currently requires NumPy 1.26.3, so the project pins the compatible stack rather than allowing dependency resolution to wander into a source-build failure.
 
 ## Why SQLite?
 
@@ -50,26 +56,46 @@ A failed source is not treated as the same thing as an empty source. JobSpy reco
 - `NETWORK_ERROR`
 - `ERROR`
 
-This matters because “no jobs found” and “the website blocked us” are completely different facts.
+Actual scraper attempt counts are persisted; a timeout is not silently reported as a successful second attempt.
+
+## Freshness and deduplication
+
+When a freshness window is requested, listings with a known posting date outside that window are removed. Listings with unknown dates are excluded by default because the application should not pretend that an unverified date satisfies a freshness requirement; the UI provides an explicit opt-in if the user wants them.
+
+Job URLs are normalized to remove common tracking parameters. Exact URL/title/company duplicates are removed, while near-duplicate matching is deliberately conservative so different vacancies such as multiple Management Trainee departments at one company are not casually merged.
 
 ## Ranking philosophy
 
-The current `Match Score` is deliberately **not an AI claim**. It uses evidence present in the search request and job result (keyword/title/location/work type) and displays a short explanation such as `keyword cocok di judul`.
+The current `Match Score` is deliberately **not an AI claim**. It uses evidence present in the search request and job result and explains the score with signals such as:
+
+- keyword coverage in the title
+- additional keyword evidence in the description
+- location match or mismatch
+- posting freshness
+- prior sightings in Job Memory
+
+The old implementation double-counted title evidence and could give a Surabaya listing a high score for a Jakarta search. That behavior is intentionally removed.
 
 Future CV/skills matching can be added later, but the system should never pretend to know a candidate's suitability without evidence.
+
+## Nafkah financial context
+
+The UI retains the original **Nafkah** integration from `main`: UMR and estimated cost-of-living references are fetched from the Nafkah dataset with an offline fallback. These figures are contextual benchmarks, not guaranteed salary or personal-budget advice.
+
+The result table and CSV expose the financial fields again, and the UI links to the Nafkah simulator for deeper cost-of-living exploration.
 
 ## Running locally
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
 For tests:
 
 ```bash
-pip install -r requirements-dev.txt
-pytest -q
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
 ```
 
 ## Deployment philosophy
@@ -90,11 +116,15 @@ The project deliberately does not require PostgreSQL, Redis, Docker, authenticat
 - [x] SQLite job memory
 - [x] Persistent application status
 - [x] Explainable baseline ranking
+- [x] Freshness filtering
+- [x] Conservative URL/title/company deduplication
+- [x] Nafkah financial context restored
 - [x] Automated tests / CI
 
 ### Intelligence
-- [ ] Cross-search “seen before” and repost detection
-- [ ] Better freshness signals
+- [x] Cross-search seen-before signal for previously known URLs
+- [ ] Near-duplicate/repost identity across different source URLs
+- [ ] Better freshness/repost signals
 - [ ] CV/skills-based matching
 - [ ] Salary normalization
 - [ ] Company and source reliability signals
