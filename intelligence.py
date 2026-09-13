@@ -1,8 +1,4 @@
-"""Explainable, deterministic job-ranking heuristics.
-
-The score is deliberately conservative: it rewards evidence that is actually
-present in the search request/result and penalizes obvious contradictions.
-"""
+"""Explainable, deterministic job-ranking heuristics."""
 
 from __future__ import annotations
 
@@ -50,6 +46,19 @@ def _freshness_points(age_hours) -> tuple[int, str | None]:
     return 0, None
 
 
+def _relevance(title_hits: int, description_hits: int, query_tokens: set[str]) -> tuple[str, int, str | None]:
+    if not query_tokens:
+        return "Unknown", 0, None
+    coverage = title_hits / len(query_tokens)
+    if title_hits == len(query_tokens):
+        return "Strong", 55, "keyword lengkap di judul"
+    if title_hits > 0:
+        return "Partial", max(20, int(coverage * 55)), "sebagian keyword di judul"
+    if description_hits > 0:
+        return "Weak", min(15, int((description_hits / len(query_tokens)) * 15)), "keyword muncul di deskripsi"
+    return "Weak", 0, None
+
+
 def score_jobs(
     df: pd.DataFrame,
     search_term: str,
@@ -62,35 +71,26 @@ def score_jobs(
     result = df.copy()
     query_tokens = _tokens(search_term)
     history = history or {}
-    scores, reasons = [], []
+    scores, reasons, relevance_labels, novelty_labels = [], [], [], []
 
     for _, row in result.iterrows():
         title_tokens = _tokens(row.get("title", ""))
         description_tokens = _tokens(row.get("description", ""))
-        text_tokens = _tokens(f"{row.get('title', '')} {row.get('description', '')}")
-        title_hits = len(query_tokens & title_tokens)
-        description_hits = len(query_tokens & description_tokens)
         location_match, location_mismatch = _location_matches(location, row.get("location", ""))
         freshness, freshness_reason = _freshness_points(row.get("posted_age_hours", pd.NA))
+        title_hits = len(query_tokens & title_tokens)
+        description_hits = len(query_tokens & description_tokens)
+        relevance, relevance_points, relevance_reason = _relevance(title_hits, description_hits, query_tokens)
 
-        score = 0
+        score = relevance_points
         why = []
+        if relevance_reason:
+            why.append(relevance_reason)
 
-        if query_tokens:
-            title_coverage = title_hits / len(query_tokens)
-            # Title evidence is the strongest signal. Description overlap is
-            # capped separately and only counts tokens not already explained by
-            # the title, preventing the old 60+20 double-counting bug.
-            score += min(55, int(title_coverage * 55))
-            extra_description_hits = len(query_tokens & (description_tokens - title_tokens))
-            if extra_description_hits:
-                score += min(15, int((extra_description_hits / len(query_tokens)) * 15))
-            if title_hits == len(query_tokens):
-                why.append("keyword lengkap di judul")
-            elif title_hits:
-                why.append("sebagian keyword di judul")
-            elif description_hits:
-                why.append("keyword muncul di deskripsi")
+        if title_hits == 0 and description_hits == 0 and query_tokens:
+            # Freshness/location can still make a listing worth seeing, but it
+            # must never masquerade as keyword relevance.
+            score = min(score, 30)
 
         if location_match:
             score += 20
@@ -98,29 +98,45 @@ def score_jobs(
         elif location_mismatch:
             score -= 25
             why.append("lokasi berbeda")
+        elif location and not str(row.get("location", "")).strip():
+            why.append("lokasi tidak diketahui")
 
         score += freshness
         if freshness_reason:
             why.append(freshness_reason)
-        elif row.get("date_posted", "Unknown") == "Unknown":
+        elif str(row.get("date_posted", "Unknown")) == "Unknown":
             why.append("tanggal tidak diketahui")
 
-        work_type = str(row.get("Work Type", "")).lower()
-        if work_type == "remote":
-            # Remote is useful context, not an automatic quality bonus.
+        if str(row.get("Work Type", "")).lower() == "remote":
             why.append("remote")
 
         url = str(row.get("job_url", ""))
         previous = history.get(url, {})
         seen_count = int(previous.get("seen_count", 0) or 0)
-        if seen_count > 0:
+        fingerprint_count = int(previous.get("fingerprint_count", 0) or 0)
+        other_url_count = int(previous.get("other_url_count", 0) or 0)
+
+        if other_url_count > 0:
+            novelty_labels.append("Possible repost")
+            score -= 5
+            why.append("kemungkinan repost")
+        elif seen_count > 0:
+            novelty_labels.append("Seen before")
             score -= min(10, seen_count * 3)
             why.append(f"sudah terlihat {seen_count}x")
+        else:
+            novelty_labels.append("New")
 
+        # fingerprint_count is kept separate from seen_count so the UI can
+        # distinguish repeated discovery of the same URL from a likely repost.
+        _ = fingerprint_count
         scores.append(max(0, min(100, score)))
         reasons.append("; ".join(why) if why else "bukti kecocokan terbatas")
+        relevance_labels.append(relevance)
 
     result["Match Score"] = scores
+    result["Relevance"] = relevance_labels
+    result["Novelty"] = novelty_labels
     result["Why Match"] = reasons
     return result.sort_values(
         ["Match Score", "posted_age_hours", "date_posted"],
