@@ -6,7 +6,7 @@ from time import perf_counter
 
 import pandas as pd
 
-from scraper import scrape_one_site
+from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
     "SUCCESS", "EMPTY", "BLOCKED", "RATE_LIMITED", "TIMEOUT",
@@ -65,31 +65,29 @@ def search_sources(
     sites: list[str], *, search_term: str, location: str, country_indeed: str,
     results_wanted: int, hours_old: int, proxy: str = None,
 ) -> SearchRun:
-    """Run selected sources sequentially and return jobs plus observability.
-
-    Sequential execution is intentional for now: source reliability is measured
-    before concurrency is introduced.
-    """
+    """Run selected sources sequentially and return jobs plus observability."""
     frames: list[pd.DataFrame] = []
     results: list[SourceResult] = []
 
     for site in sites:
         started = datetime.now(timezone.utc).isoformat()
         started_clock = perf_counter()
-        df, error = scrape_one_site(
+        outcome = scrape_one_site_detailed(
             site=site, search_term=search_term, location=location,
             country_indeed=country_indeed, results_wanted=results_wanted,
             hours_old=hours_old, proxy=proxy,
         )
         duration_ms = int((perf_counter() - started_clock) * 1000)
 
-        if error:
+        if outcome.error:
             results.append(SourceResult(
-                source=site, status=classify_error(error), result_count=0,
-                duration_ms=duration_ms, attempts=2, error=error, started_at=started,
+                source=site, status=classify_error(outcome.error), result_count=0,
+                duration_ms=duration_ms, attempts=outcome.attempts,
+                error=outcome.error, started_at=started,
             ))
             continue
 
+        df = outcome.dataframe
         count = 0 if df is None else len(df)
         if count:
             df = df.copy()
@@ -102,7 +100,8 @@ def search_sources(
 
         results.append(SourceResult(
             source=site, status=status, result_count=count,
-            duration_ms=duration_ms, attempts=1, started_at=started,
+            duration_ms=duration_ms, attempts=outcome.attempts,
+            started_at=started,
         ))
 
     jobs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
