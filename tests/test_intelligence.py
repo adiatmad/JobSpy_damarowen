@@ -40,6 +40,15 @@ def test_location_mismatch_is_penalized():
     assert "lokasi berbeda" in surabaya["Why Match"]
 
 
+def test_broad_indonesia_location_does_not_penalize_regional_jobs():
+    jobs = pd.DataFrame([
+        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "posted_age_hours": 3},
+        {"title": "GIS Analyst", "description": "", "location": "Surabaya", "posted_age_hours": 3},
+    ])
+    result = score_jobs(jobs, "GIS Analyst", "Indonesia")
+    assert all("lokasi berbeda" not in reason for reason in result["Why Match"])
+
+
 def test_seen_history_reduces_score():
     jobs = pd.DataFrame([
         {"title": "GIS Analyst", "description": "", "location": "Jakarta", "Work Type": "On-site", "date_posted": "2026-09-13", "posted_age_hours": 3, "job_url": "https://x/1"},
