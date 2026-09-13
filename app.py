@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from intelligence import score_jobs
-from pipeline import deduplicate_jobs, process_job_data, validate_jobs
+from pipeline import categorize_work_type, deduplicate_jobs, process_job_data, validate_jobs
 from search_engine import search_sources
 from storage import ALLOWED_STATUSES, JobStore
 from utils import build_google_search_term, glassdoor_supports_country, inject_custom_css, render_dua_cards
@@ -102,9 +102,7 @@ with tab_search:
         jobs = validate_jobs(run.jobs, settings["hours_old"])
         jobs = deduplicate_jobs(jobs)
         if not jobs.empty:
-            jobs["Work Type"] = jobs.apply(lambda row: row.get("Work Type") or "", axis=1)
-            jobs["Work Type"] = jobs.apply(lambda row: row.get("Work Type") if row.get("Work Type") else None, axis=1)
-            jobs["Work Type"] = jobs.apply(__import__("pipeline").categorize_work_type, axis=1)
+            jobs["Work Type"] = jobs.apply(categorize_work_type, axis=1)
             jobs = score_jobs(jobs, settings["search_term"], settings["location"])
             jobs = process_job_data(jobs)
             statuses = store.get_application_statuses(jobs["job_url"].tolist())
@@ -122,7 +120,6 @@ with tab_search:
     if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
         jobs = st.session_state.raw_jobs.copy()
         st.success(f"✅ {len(jobs)} lowongan unik setelah normalisasi dan deduplikasi.")
-
         col1, col2 = st.columns(2)
         with col1:
             filter_work = st.multiselect("Jenis kerja", ["Remote", "Hybrid", "On-site"], default=["Remote", "Hybrid", "On-site"])
@@ -181,6 +178,5 @@ with tab_history:
             column_config={"job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗")},
             use_container_width=True, hide_index=True,
         )
-
         st.subheader("📡 Recent source health")
         st.dataframe(store.load_source_health(), use_container_width=True, hide_index=True)
