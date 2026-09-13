@@ -20,11 +20,12 @@ def _tokens(value: str) -> set[str]:
 
 def _location_matches(requested: str, actual: str) -> tuple[bool, bool]:
     """Return (matches, explicit_mismatch) for a user-supplied location."""
+    requested_raw = str(requested or "").lower()
     requested_tokens = _tokens(requested)
     actual_tokens = _tokens(actual)
     if not requested_tokens:
-        return False, False
-    if requested_tokens & BROAD_LOCATIONS:
+        return bool(any(re.search(rf"\b{re.escape(item)}\b", requested_raw) for item in BROAD_LOCATIONS)), False
+    if any(re.search(rf"\b{re.escape(item)}\b", requested_raw) for item in BROAD_LOCATIONS):
         return True, False
     if not actual_tokens:
         return False, False
@@ -59,15 +60,9 @@ def _relevance(title_hits: int, description_hits: int, query_tokens: set[str]) -
     return "Weak", 0, None
 
 
-def score_jobs(
-    df: pd.DataFrame,
-    search_term: str,
-    location: str = "",
-    history: dict[str, dict] | None = None,
-) -> pd.DataFrame:
+def score_jobs(df: pd.DataFrame, search_term: str, location: str = "", history: dict[str, dict] | None = None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
-
     result = df.copy()
     query_tokens = _tokens(search_term)
     history = history or {}
@@ -81,17 +76,12 @@ def score_jobs(
         title_hits = len(query_tokens & title_tokens)
         description_hits = len(query_tokens & description_tokens)
         relevance, relevance_points, relevance_reason = _relevance(title_hits, description_hits, query_tokens)
-
         score = relevance_points
         why = []
         if relevance_reason:
             why.append(relevance_reason)
-
         if title_hits == 0 and description_hits == 0 and query_tokens:
-            # Freshness/location can still make a listing worth seeing, but it
-            # must never masquerade as keyword relevance.
             score = min(score, 30)
-
         if location_match:
             score += 20
             why.append("lokasi cocok")
@@ -100,22 +90,18 @@ def score_jobs(
             why.append("lokasi berbeda")
         elif location and not str(row.get("location", "")).strip():
             why.append("lokasi tidak diketahui")
-
         score += freshness
         if freshness_reason:
             why.append(freshness_reason)
         elif str(row.get("date_posted", "Unknown")) == "Unknown":
             why.append("tanggal tidak diketahui")
-
         if str(row.get("Work Type", "")).lower() == "remote":
             why.append("remote")
 
         url = str(row.get("job_url", ""))
         previous = history.get(url, {})
         seen_count = int(previous.get("seen_count", 0) or 0)
-        fingerprint_count = int(previous.get("fingerprint_count", 0) or 0)
         other_url_count = int(previous.get("other_url_count", 0) or 0)
-
         if other_url_count > 0:
             novelty_labels.append("Possible repost")
             score -= 5
@@ -127,9 +113,6 @@ def score_jobs(
         else:
             novelty_labels.append("New")
 
-        # fingerprint_count is kept separate from seen_count so the UI can
-        # distinguish repeated discovery of the same URL from a likely repost.
-        _ = fingerprint_count
         scores.append(max(0, min(100, score)))
         reasons.append("; ".join(why) if why else "bukti kecocokan terbatas")
         relevance_labels.append(relevance)
@@ -138,8 +121,4 @@ def score_jobs(
     result["Relevance"] = relevance_labels
     result["Novelty"] = novelty_labels
     result["Why Match"] = reasons
-    return result.sort_values(
-        ["Match Score", "posted_age_hours", "date_posted"],
-        ascending=[False, True, False],
-        na_position="last",
-    ).reset_index(drop=True)
+    return result.sort_values(["Match Score", "posted_age_hours", "date_posted"], ascending=[False, True, False], na_position="last").reset_index(drop=True)
