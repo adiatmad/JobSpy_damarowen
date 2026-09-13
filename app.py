@@ -23,6 +23,8 @@ if "search_executed" not in st.session_state:
     st.session_state.search_executed = False
 if "last_sources" not in st.session_state:
     st.session_state.last_sources = []
+if "last_filter_note" not in st.session_state:
+    st.session_state.last_filter_note = ""
 
 
 def render_search_settings():
@@ -35,6 +37,12 @@ def render_search_settings():
             country_indeed = st.text_input("Negara Indeed/Glassdoor", value="Indonesia")
             results_wanted = st.slider("Hasil per situs", 5, 50, 15, 5)
             hours_old = st.number_input("Diposting dalam (jam)", min_value=0, value=72, step=24)
+
+        include_unknown_dates = st.checkbox(
+            "Sertakan lowongan dengan tanggal posting tidak diketahui",
+            value=False,
+            help="Jika aktif, lowongan tanpa tanggal tetap ditampilkan meski filter usia digunakan. Ini kurang ketat untuk pencarian freshness.",
+        )
 
         st.caption("Sumber:")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
@@ -58,7 +66,7 @@ def render_search_settings():
             "search_term": search_term, "location": location, "country_indeed": country_indeed,
             "results_wanted": results_wanted, "hours_old": hours_old, "sites": sites,
             "proxy": proxy, "google_enabled": google_enabled, "exclude_age": exclude_age,
-            "custom_exclude": custom_exclude,
+            "custom_exclude": custom_exclude, "include_unknown_dates": include_unknown_dates,
         }
 
 
@@ -67,7 +75,10 @@ def render_source_health():
         return
     with st.expander("📡 Source health", expanded=True):
         for item in st.session_state.last_sources:
-            label = f"{item['source']} · {item['status']} · {item['result_count']} hasil · {item['duration_ms']} ms"
+            label = (
+                f"{item['source']} · {item['status']} · {item['result_count']} hasil · "
+                f"{item['duration_ms']} ms · {item['attempts']} attempt"
+            )
             if item["status"] == "SUCCESS":
                 st.success(label)
             elif item["status"] == "EMPTY":
@@ -99,19 +110,40 @@ with tab_search:
         status_area.empty()
         st.session_state.last_sources = run.source_health
 
-        jobs = validate_jobs(run.jobs, settings["hours_old"])
+        before_count = len(run.jobs)
+        jobs = validate_jobs(
+            run.jobs,
+            settings["hours_old"],
+            include_unknown_dates=settings["include_unknown_dates"],
+        )
+        after_freshness = len(jobs)
         jobs = deduplicate_jobs(jobs)
+        after_dedup = len(jobs)
+
         if not jobs.empty:
             jobs["Work Type"] = jobs.apply(categorize_work_type, axis=1)
-            jobs = score_jobs(jobs, settings["search_term"], settings["location"])
-            jobs = process_job_data(jobs)
+            history = store.get_job_history(jobs["job_url"].tolist())
             statuses = store.get_application_statuses(jobs["job_url"].tolist())
+            jobs = score_jobs(jobs, settings["search_term"], settings["location"], history=history)
+            jobs = process_job_data(jobs)
             jobs["application_status"] = jobs["job_url"].map(statuses).fillna("new")
+
+            # Persist after scoring so "seen before" is based on prior searches,
+            # not on the search currently being displayed.
             store.upsert_jobs(jobs)
             store.record_search(settings["search_term"], settings["location"], jobs, run.sources)
 
+            refreshed_history = store.get_job_history(jobs["job_url"].tolist())
+            jobs["Seen"] = jobs["job_url"].map(
+                lambda url: refreshed_history.get(url, {}).get("seen_count", 1)
+            )
+
         st.session_state.raw_jobs = jobs
         st.session_state.search_executed = not jobs.empty
+        st.session_state.last_filter_note = (
+            f"{before_count} hasil mentah → {after_freshness} lolos freshness → "
+            f"{after_dedup} lowongan unik"
+        )
         if jobs.empty:
             st.warning("Tidak ada lowongan valid ditemukan. Lihat Source health untuk membedakan EMPTY dari BLOCKED/TIMEOUT.")
 
@@ -120,15 +152,27 @@ with tab_search:
     if st.session_state.search_executed and not st.session_state.raw_jobs.empty:
         jobs = st.session_state.raw_jobs.copy()
         st.success(f"✅ {len(jobs)} lowongan unik setelah normalisasi dan deduplikasi.")
+        if st.session_state.last_filter_note:
+            st.caption(st.session_state.last_filter_note)
+        st.info("💡 **Acuan finansial:** data UMR & estimasi biaya hidup berasal dari **Nafkah**. Gunakan sebagai pembanding, bukan angka gaji pasti.")
+        st.markdown("[Buka Nafkah untuk simulasi biaya hidup ↗](https://nafkah.adenaufal.com/)")
+
         col1, col2 = st.columns(2)
         with col1:
-            filter_work = st.multiselect("Jenis kerja", ["Remote", "Hybrid", "On-site"], default=["Remote", "Hybrid", "On-site"])
+            filter_work = st.multiselect(
+                "Jenis kerja", ["Remote", "Hybrid", "On-site"],
+                default=["Remote", "Hybrid", "On-site"],
+            )
         with col2:
             min_score = st.slider("Minimum Match Score", 0, 100, 0, 5)
         jobs = jobs[jobs["Work Type"].isin(filter_work)]
         jobs = jobs[jobs["Match Score"] >= min_score]
 
-        display_cols = ["application_status", "Match Score", "Why Match", "date_posted", "title", "company", "Work Type", "location", "job_url"]
+        display_cols = [
+            "application_status", "Match Score", "Why Match", "date_posted", "title", "company",
+            "Lokasi & Gaji", "Acuan Finansial", "Info UMR", "Est. Biaya Hidup", "Work Type",
+            "location", "Seen", "job_url",
+        ]
         display_cols = [c for c in display_cols if c in jobs.columns]
         edited = st.data_editor(
             jobs[display_cols],
@@ -136,6 +180,8 @@ with tab_search:
                 "application_status": st.column_config.SelectboxColumn("Status", options=sorted(ALLOWED_STATUSES)),
                 "Match Score": st.column_config.NumberColumn("Match", min_value=0, max_value=100, format="%d"),
                 "job_url": st.column_config.LinkColumn("Lamaran", display_text="Buka ↗"),
+                "Seen": st.column_config.NumberColumn("Seen", min_value=1, format="%d"),
+                "Acuan Finansial": st.column_config.TextColumn("Biaya Hidup (Nafkah)"),
             },
             use_container_width=True, hide_index=True, key="job_tracker_editor",
         )
@@ -148,6 +194,12 @@ with tab_search:
             st.session_state.raw_jobs.loc[jobs.index, "application_status"] = edited["application_status"].values
 
         export = process_job_data(st.session_state.raw_jobs.copy())
+        export_cols = [
+            "application_status", "Match Score", "Why Match", "date_posted", "title", "company",
+            "location", "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", "Acuan Finansial",
+            "job_url", "description", "Seen",
+        ]
+        export = export[[c for c in export_cols if c in export.columns]]
         csv = export.to_csv(index=False).encode("utf-8-sig")
         stamp = datetime.now().strftime("%Y-%b-%d_%H%M")
         keyword = settings["search_term"].strip().replace(" ", "_") or "SemuaPosisi"
@@ -160,7 +212,8 @@ with tab_search:
                 custom_exclude=settings["custom_exclude"],
             )
             st.code(query, language="text")
-            st.markdown(f"[🔗 Buka Google Jobs](https://www.google.com/search?q={urllib.parse.quote(query)}&ibp=htl;jobs)")
+            encoded_q = urllib.parse.quote(query)
+            st.markdown(f"[🔗 Buka Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
 
 with tab_history:
     st.subheader("🧠 Job Memory")
@@ -173,8 +226,12 @@ with tab_history:
         metrics[1].metric("Shortlisted", int((history.application_status == "shortlisted").sum()))
         metrics[2].metric("Applied", int((history.application_status == "applied").sum()))
         metrics[3].metric("Interview", int((history.application_status == "interview").sum()))
+        history_cols = [
+            "application_status", "seen_count", "title", "company", "location", "source",
+            "first_seen_at", "last_seen_at", "job_url",
+        ]
         st.dataframe(
-            history[["application_status", "title", "company", "location", "source", "first_seen_at", "last_seen_at", "job_url"]],
+            history[[c for c in history_cols if c in history.columns]],
             column_config={"job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗")},
             use_container_width=True, hide_index=True,
         )
