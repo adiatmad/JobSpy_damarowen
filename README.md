@@ -1,105 +1,125 @@
-# Job Search Scraper (Streamlit App)
+# JobSpy — Personal Job Intelligence
 
-A simple web app that searches LinkedIn, Indeed, Glassdoor, ZipRecruiter, Google, and JobStreet
-for jobs, using the `python-jobspy-damarowen` library, and lets you download the results as a CSV.
+JobSpy started as a Streamlit scraper. It is now being evolved into a **personal-first job-search intelligence tool**: discover jobs, normalize them, remember what has been seen, rank evidence-based matches, and track applications.
 
-No coding experience needed to run this online — just follow the steps below.
+The same core is designed to remain deployable at $0 for personal use and to be usable by others later without prematurely building a multi-user SaaS stack.
 
-## What's in this folder
+## Current architecture
 
-- `app.py` — the app itself
-- `requirements.txt` — the list of Python packages the app needs
-- `README.md` — this file
-
-## Step 1: Create a GitHub repository
-
-1. Go to https://github.com and log in (or create a free account).
-2. Click the **+** icon top-right → **New repository**.
-3. Name it something like `job-search-app`. Keep it **Public**. Click **Create repository**.
-
-## Step 2: Upload these files
-
-1. On your new repo's page, click **Add file → Upload files**.
-2. Drag in `app.py`, `requirements.txt`, and `README.md` from this folder.
-3. Scroll down, click **Commit changes**.
-
-That's it for GitHub — you don't need `.github.io` or anything else, since this app doesn't run
-as a static site. It needs to actually run Python, which is what the next step is for.
-
-## Step 3: Deploy on Streamlit Community Cloud (free)
-
-1. Go to https://share.streamlit.io and sign in with your GitHub account.
-2. Click **Create app** (or **New app**).
-3. Choose your `job-search-app` repository, branch `main`, and set **Main file path** to `app.py`.
-4. Click **Deploy**.
-
-Streamlit will install everything in `requirements.txt` automatically and give you a public URL like:
-
-```
-https://your-app-name.streamlit.app
+```text
+Streamlit UI
+    ↓
+Search Engine
+    ↓
+Source adapters / JobSpy
+    ↓
+Validation + deduplication
+    ↓
+Explainable ranking
+    ↓
+SQLite Job Memory
 ```
 
-Share that link with anyone — they can use the search tool right in their browser.
+### Main modules
 
-## Using the app
+- `app.py` — Streamlit presentation layer
+- `scraper.py` — framework-agnostic JobSpy execution, retry and timeout handling
+- `search_engine.py` — source orchestration and source-health reporting
+- `pipeline.py` — validation, deduplication and data enrichment
+- `intelligence.py` — deterministic, explainable job ranking
+- `storage.py` — SQLite persistence for jobs, application status and search/source history
+- `utils.py` — presentation helpers and existing search utilities
+- `tests/` — automated regression tests
 
-- Set **Location**, **Country**, and (optionally) a keyword in the sidebar.
-- Pick which job sites to search.
-- Click **Search jobs**.
-- Expand **"Per-site results"** to see how many jobs each site returned, or why a site failed.
-- Once results appear, click **Download results as CSV** to save them.
+## Why SQLite?
 
-## Searching without a keyword
+SQLite keeps the personal deployment simple: no database server, no subscription, no credentials, and no infrastructure to maintain. If the project eventually needs multi-user scale, the storage boundary can be replaced without redesigning the search/intelligence core.
 
-The keyword field is optional. Leave it blank to get all valid postings for your location and
-"posted within X hours" filter, with no title/keyword restriction. This works natively for
-**LinkedIn, Indeed, ZipRecruiter, JobStreet, and Glassdoor**.
+Local database files are intentionally ignored by Git.
 
-**Google is the one exception.** Google's scraper needs an actual search phrase to send to Google
-Jobs — it can't browse by location alone. When you leave the keyword blank and Google is selected,
-the app automatically builds a query behind the scenes (e.g. `"jobs in Jakarta since yesterday"`)
-so Google still gets a valid, working search instead of breaking.
+## Source health
 
-## How this version handles unreliable sites
+A failed source is not treated as the same thing as an empty source. JobSpy records states such as:
 
-Each site is now searched **separately**, one at a time, instead of one combined request. This
-means:
+- `SUCCESS`
+- `EMPTY`
+- `BLOCKED`
+- `RATE_LIMITED`
+- `TIMEOUT`
+- `PARSER_ERROR`
+- `NETWORK_ERROR`
+- `ERROR`
 
-- If one site fails or times out, the others still return their results — you never lose LinkedIn
-  or Indeed results just because Glassdoor or Google had a problem.
-- The **"Per-site results"** panel shows exactly how many jobs came from each site, or the specific
-  error, instead of one generic failure message.
-- Each site gets up to 2 attempts (with a short pause in between) and a 60-second timeout before
-  it's marked as failed.
+This matters because “no jobs found” and “the website blocked us” are completely different facts.
 
-**Glassdoor and Indonesia:** the `python-jobspy-damarowen` library has no Glassdoor domain
-configured for Indonesia at all — searching it with Indonesia selected always fails. The app
-checks this automatically (by asking the library itself which countries it supports) and disables
-the Glassdoor checkbox with an explanation whenever the country field isn't one Glassdoor covers.
-Change the country to somewhere Glassdoor does support (e.g. Singapore, USA) and the checkbox
-re-enables on its own.
+## Ranking philosophy
 
-**Google and JobStreet:** these sites actively try to block automated scraping, and Streamlit
-Community Cloud's shared IP addresses get flagged more often than a home connection would. The app
-retries each site and reports the real error (timeout vs. blocked vs. simply no results), but this
-is a best-effort improvement — occasional failures on these two are a limitation of scraping those
-platforms from a cloud server, not a bug in this app, and can't be fully guaranteed away.
+The current `Match Score` is deliberately **not an AI claim**. It uses evidence present in the search request and job result (keyword/title/location/work type) and displays a short explanation such as `keyword cocok di judul`.
 
-## Good to know
+Future CV/skills matching can be added later, but the system should never pretend to know a candidate's suitability without evidence.
 
-- Scraping now takes a bit longer since sites are queried one at a time with retries rather than
-  all at once — expect roughly 10–90 seconds depending on how many sites you pick.
-- If a site returns few or no results, try again later, reduce "Results per site," or check the
-  per-site results panel for the specific reason.
-- If you ever want to change something (like the default location), edit `app.py` on GitHub
-  directly (click the pencil icon on the file), commit the change, and Streamlit Cloud will
-  redeploy automatically.
+## Running locally
 
-## Running it on your own computer (optional)
-
-If you later install Python, you can also run this locally instead of on Streamlit Cloud:
-
-```
+```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+For tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+## Deployment philosophy
+
+The application should remain portable:
+
+1. **Local PC** — best control over scraping environment and $0.
+2. **Streamlit Community Cloud** — simple public deployment when its shared execution environment is sufficient.
+3. **Hybrid worker architecture** — if cloud IP reputation becomes the bottleneck, the UI and scraping worker can be separated later.
+
+The project deliberately does not require PostgreSQL, Redis, Docker, authentication, or a paid hosting provider at this stage.
+
+## Roadmap
+
+### Foundation
+- [x] Separate scraping from Streamlit
+- [x] Source-level observability
+- [x] SQLite job memory
+- [x] Persistent application status
+- [x] Explainable baseline ranking
+- [x] Automated tests / CI
+
+### Intelligence
+- [ ] Cross-search “seen before” and repost detection
+- [ ] Better freshness signals
+- [ ] CV/skills-based matching
+- [ ] Salary normalization
+- [ ] Company and source reliability signals
+- [ ] Application funnel analytics
+
+### Discovery
+- [ ] Search-engine/metasearch discovery inspired by SearXNG
+- [ ] Career-page discovery
+- [ ] Browser-crawler fallback inspired by Crawl4AI
+- [ ] Adaptive rate/concurrency controls
+
+### Public use
+- [ ] Portable storage interface
+- [ ] Optional API
+- [ ] Optional multi-user isolation
+- [ ] Low-cost deployment profile
+
+## Design principles
+
+Borrowed from the reference projects that informed this architecture:
+
+- **Evidence over cleverness.**
+- **Source failures are first-class data.**
+- **Cheap retrieval before expensive browser automation.**
+- **No source-specific scraping logic in the UI.**
+- **Every useful result should be traceable to a source.**
+- **Do not build multi-user infrastructure before real usage requires it.**
+- **Do not add features merely because they are technically interesting.**
