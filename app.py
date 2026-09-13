@@ -4,6 +4,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from guide import render_search_guide
 from intelligence import score_jobs
 from pipeline import categorize_work_type, deduplicate_jobs, job_fingerprint, process_job_data, validate_jobs
 from search_engine import search_sources
@@ -87,7 +88,7 @@ def render_source_health():
 st.title("🔎 Teman Cari Kerja")
 st.caption("Job-search intelligence: cari, ingat, nilai, dan lacak lowongan—bukan sekadar scraper.")
 
-tab_search, tab_history = st.tabs(["🔍 Cari Pekerjaan", "🧠 Job Memory"])
+tab_search, tab_guide, tab_history = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian", "🧠 Job Memory"])
 
 with tab_search:
     settings = render_search_settings()
@@ -218,6 +219,9 @@ with tab_search:
             st.code(query, language="text")
             encoded_q = urllib.parse.quote(query)
             st.markdown(f"[🔗 Buka Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
+
+with tab_guide:
+    render_search_guide()
 
 with tab_history:
     st.subheader("🧠 Job Memory")
