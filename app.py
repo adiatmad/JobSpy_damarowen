@@ -174,7 +174,7 @@ with tab_search:
             jobs = jobs[jobs["Relevance"].isin(relevance_filter)]
 
         display_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Novelty", "Location Match", "Why Match", "date_posted", "title", "company",
             "Lokasi & Gaji", "Acuan Finansial", "Financial Signal", "Info UMR", "Est. Biaya Hidup", "Work Type",
             "location", "Seen", "job_url",
         ]
@@ -201,7 +201,7 @@ with tab_search:
 
         export = process_job_data(st.session_state.raw_jobs.copy())
         export_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Novelty", "Location Match", "Why Match", "date_posted", "title", "company",
             "location", "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", "Acuan Finansial", "Financial Signal",
             "job_url", "description", "Seen",
         ]
