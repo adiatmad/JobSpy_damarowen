@@ -37,7 +37,38 @@ def test_location_mismatch_is_penalized():
     jakarta = result[result["location"] == "Jakarta"].iloc[0]
     surabaya = result[result["location"] == "Surabaya"].iloc[0]
     assert jakarta["Match Score"] > surabaya["Match Score"]
+    assert surabaya["Location Match"] == "Mismatch"
     assert "lokasi berbeda" in surabaya["Why Match"]
+
+
+def test_location_match_accepts_city_variants():
+    jobs = pd.DataFrame([
+        {"title": "GIS Analyst", "description": "", "location": "West Jakarta, Jakarta, Indonesia", "posted_age_hours": 3},
+    ])
+    result = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    assert result.iloc[0]["Location Match"] == "Match"
+    assert "lokasi cocok" in result.iloc[0]["Why Match"]
+
+
+def test_location_does_not_match_different_known_city_with_shared_region_words():
+    jobs = pd.DataFrame([
+        {"title": "GIS Analyst", "description": "", "location": "Surabaya, East Java, Indonesia", "posted_age_hours": 3},
+    ])
+    result = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    assert result.iloc[0]["Location Match"] == "Mismatch"
+    assert "lokasi berbeda" in result.iloc[0]["Why Match"]
+
+
+def test_location_does_not_partially_match_different_city():
+    jobs = pd.DataFrame([
+        {"title": "GIS Analyst", "description": "", "location": "Jakarta Barat, Indonesia", "posted_age_hours": 3},
+        {"title": "GIS Analyst", "description": "", "location": "Jakarta Selatan, Indonesia", "posted_age_hours": 3},
+    ])
+    result = score_jobs(jobs, "GIS Analyst", "Jakarta Selatan")
+    south = result[result["location"].str.contains("Selatan")].iloc[0]
+    west = result[result["location"].str.contains("Barat")].iloc[0]
+    assert south["Location Match"] == "Match"
+    assert west["Location Match"] == "Match"  # same city; district preference is intentionally not modeled yet
 
 
 def test_broad_indonesia_location_does_not_penalize_regional_jobs():
@@ -47,6 +78,7 @@ def test_broad_indonesia_location_does_not_penalize_regional_jobs():
     ])
     result = score_jobs(jobs, "GIS Analyst", "Indonesia")
     assert all("lokasi berbeda" not in reason for reason in result["Why Match"])
+    assert all(result["Location Match"] == "Match")
 
 
 def test_seen_history_reduces_score():
