@@ -29,8 +29,7 @@ def _canonical_city(value: str) -> str | None:
     """Extract a known Indonesian city without treating shared region words as a match."""
     text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
     for city in sorted(KNOWN_CITIES, key=len, reverse=True):
-        pattern = rf"\b{re.escape(city)}\b"
-        if re.search(pattern, text):
+        if re.search(rf"\b{re.escape(city)}\b", text):
             if city == "surakarta" and "solo" in text.split():
                 return "solo"
             return "solo" if city == "surakarta" else city
@@ -53,7 +52,6 @@ def _location_matches(requested: str, actual: str) -> tuple[bool, bool]:
     if requested_city and actual_city:
         return (True, False) if requested_city == actual_city else (False, True)
     if requested_city and not actual_city:
-        # Do not claim a match merely because an unknown administrative label shares a word.
         return False, False
 
     requested_tokens = _tokens(requested_raw)
@@ -63,7 +61,6 @@ def _location_matches(requested: str, actual: str) -> tuple[bool, bool]:
     if requested_tokens <= actual_tokens:
         return True, False
     if requested_tokens & actual_tokens:
-        # Partial overlap is only a match when no known city contradicts it.
         return True, False
     return False, True
 
@@ -94,13 +91,13 @@ def _relevance(title_hits: int, description_hits: int, query_tokens: set[str]) -
     return "Weak", 0, None
 
 
-def score_jobs(df: pd.DataFrame, search_term: str, location: str = "", history: dict[str, dict] | None = None) -> pd.DataFrame:
+def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.DataFrame:
+    """Rank jobs only from evidence in the query/result; no history-based scoring."""
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
     result = df.copy()
     query_tokens = _tokens(search_term)
-    history = history or {}
-    scores, reasons, relevance_labels, novelty_labels, location_labels = [], [], [], [], []
+    scores, reasons, relevance_labels, location_labels = [], [], [], []
 
     for _, row in result.iterrows():
         title_tokens = _tokens(row.get("title", ""))
@@ -137,28 +134,12 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "", history: 
         if str(row.get("Work Type", "")).lower() == "remote":
             why.append("remote")
 
-        url = str(row.get("job_url", ""))
-        previous = history.get(url, {})
-        seen_count = int(previous.get("seen_count", 0) or 0)
-        other_url_count = int(previous.get("other_url_count", 0) or 0)
-        if other_url_count > 0:
-            novelty_labels.append("Possible repost")
-            score -= 5
-            why.append("kemungkinan repost")
-        elif seen_count > 0:
-            novelty_labels.append("Seen before")
-            score -= min(10, seen_count * 3)
-            why.append(f"sudah terlihat {seen_count}x")
-        else:
-            novelty_labels.append("New")
-
         scores.append(max(0, min(100, score)))
         reasons.append("; ".join(why) if why else "bukti kecocokan terbatas")
         relevance_labels.append(relevance)
 
     result["Match Score"] = scores
     result["Relevance"] = relevance_labels
-    result["Novelty"] = novelty_labels
     result["Why Match"] = reasons
     result["Location Match"] = location_labels
     return result.sort_values(["Match Score", "posted_age_hours", "date_posted"], ascending=[False, True, False], na_position="last").reset_index(drop=True)
