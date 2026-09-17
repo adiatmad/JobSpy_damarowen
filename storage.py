@@ -12,7 +12,7 @@ ALLOWED_STATUSES = {"new", "shortlisted", "applied", "interview", "rejected", "w
 
 
 class JobStore:
-    """SQLite-backed store with no external database service required."""
+    """SQLite-backed store for job history and application tracking."""
 
     def __init__(self, db_path: str | Path = DEFAULT_DB_PATH):
         self.db_path = Path(db_path)
@@ -52,7 +52,6 @@ class JobStore:
 
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company_title ON jobs(company, title)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_last_seen ON jobs(last_seen_at)")
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_seen_count ON jobs(seen_count)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(job_fingerprint)")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS search_runs (
@@ -79,7 +78,7 @@ class JobStore:
             """)
 
     def upsert_jobs(self, jobs: pd.DataFrame) -> int:
-        """Insert new jobs; refresh and increment seen_count for existing URLs."""
+        """Insert jobs or refresh their historical sighting count by URL."""
         if jobs is None or jobs.empty or "job_url" not in jobs.columns:
             return 0
         rows = []
@@ -107,52 +106,6 @@ class JobStore:
                     last_seen_at=CURRENT_TIMESTAMP
             """, rows)
         return len(rows)
-
-    def get_job_history(self, urls: list[str]) -> dict[str, dict]:
-        """Return prior sightings for ranking without mutating the database."""
-        if not urls:
-            return {}
-        placeholders = ",".join("?" for _ in urls)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"SELECT job_url, job_fingerprint, seen_count, first_seen_at, last_seen_at, application_status FROM jobs WHERE job_url IN ({placeholders})",
-                urls,
-            ).fetchall()
-        return {
-            row["job_url"]: {
-                "seen_count": row["seen_count"],
-                "job_fingerprint": row["job_fingerprint"] or "",
-                "first_seen_at": row["first_seen_at"],
-                "last_seen_at": row["last_seen_at"],
-                "application_status": row["application_status"],
-            }
-            for row in rows
-        }
-
-    def get_fingerprint_history(self, fingerprints: list[str]) -> dict[str, dict]:
-        """Return identity history for conservative cross-URL repost detection."""
-        fingerprints = [item for item in fingerprints if item]
-        if not fingerprints:
-            return {}
-        placeholders = ",".join("?" for _ in fingerprints)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"""SELECT job_fingerprint, COUNT(DISTINCT job_url) AS distinct_urls,
-                           MIN(first_seen_at) AS first_seen_at,
-                           MAX(last_seen_at) AS last_seen_at
-                    FROM jobs
-                    WHERE job_fingerprint IN ({placeholders})
-                    GROUP BY job_fingerprint""",
-                fingerprints,
-            ).fetchall()
-        return {
-            row["job_fingerprint"]: {
-                "distinct_urls": row["distinct_urls"],
-                "first_seen_at": row["first_seen_at"],
-                "last_seen_at": row["last_seen_at"],
-            }
-            for row in rows
-        }
 
     def update_application_status(self, job_url: str, status: str) -> None:
         if status not in ALLOWED_STATUSES:
@@ -198,4 +151,4 @@ class JobStore:
 
     def load_jobs(self) -> pd.DataFrame:
         with self._connect() as connection:
-            return pd.read_sql_query("""SELECT * FROM jobs ORDER BY last_seen_at DESC""", connection)
+            return pd.read_sql_query("SELECT * FROM jobs ORDER BY last_seen_at DESC", connection)
