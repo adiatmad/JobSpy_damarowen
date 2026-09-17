@@ -86,7 +86,7 @@ def render_source_health():
 
 
 st.title("🔎 Teman Cari Kerja")
-st.caption("Job-search intelligence: cari, ingat, nilai, dan lacak lowongan—bukan sekadar scraper.")
+st.caption("Cari lowongan, validasi bukti, bandingkan konteks finansial, dan simpan histori—bukan sekadar scraper.")
 
 tab_search, tab_guide, tab_history = st.tabs(["🔍 Cari Pekerjaan", "📖 Panduan Pencarian", "🧠 Job Memory"])
 
@@ -117,32 +117,14 @@ with tab_search:
         if not jobs.empty:
             jobs["Work Type"] = jobs.apply(categorize_work_type, axis=1)
             jobs["job_fingerprint"] = jobs.apply(job_fingerprint, axis=1)
-
-            url_history = store.get_job_history(jobs["job_url"].tolist())
-            fingerprint_history = store.get_fingerprint_history(jobs["job_fingerprint"].tolist())
-            history = {}
-            for _, row in jobs.iterrows():
-                url = row["job_url"]
-                fingerprint = row["job_fingerprint"]
-                previous = dict(url_history.get(url, {}))
-                fingerprint_record = fingerprint_history.get(fingerprint, {})
-                distinct_urls = int(fingerprint_record.get("distinct_urls", 0) or 0)
-                previous["fingerprint_count"] = distinct_urls
-                previous["other_url_count"] = max(0, distinct_urls - (1 if url in url_history else 0))
-                history[url] = previous
-
             statuses = store.get_application_statuses(jobs["job_url"].tolist())
-            jobs = score_jobs(jobs, settings["search_term"], settings["location"], history=history)
+            jobs = score_jobs(jobs, settings["search_term"], settings["location"])
             jobs = process_job_data(jobs)
             jobs["application_status"] = jobs["job_url"].map(statuses).fillna("new")
 
-            # Persist after scoring so current-search sightings don't become
-            # "seen before" or "repost" evidence for the same run.
+            # Persist after scoring so the current result set is not used to alter ranking.
             store.upsert_jobs(jobs)
             store.record_search(settings["search_term"], settings["location"], jobs, run.sources)
-
-            refreshed_history = store.get_job_history(jobs["job_url"].tolist())
-            jobs["Seen"] = jobs["job_url"].map(lambda url: refreshed_history.get(url, {}).get("seen_count", 1))
 
         st.session_state.raw_jobs = jobs
         st.session_state.search_executed = not jobs.empty
@@ -174,9 +156,9 @@ with tab_search:
             jobs = jobs[jobs["Relevance"].isin(relevance_filter)]
 
         display_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Location Match", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Location Match", "Why Match", "date_posted", "title", "company",
             "Lokasi & Gaji", "Acuan Finansial", "Financial Signal", "Info UMR", "Est. Biaya Hidup", "Work Type",
-            "location", "Seen", "job_url",
+            "location", "job_url",
         ]
         display_cols = [c for c in display_cols if c in jobs.columns]
         edited = st.data_editor(
@@ -185,7 +167,6 @@ with tab_search:
                 "application_status": st.column_config.SelectboxColumn("Status", options=sorted(ALLOWED_STATUSES)),
                 "Match Score": st.column_config.NumberColumn("Match", min_value=0, max_value=100, format="%d"),
                 "job_url": st.column_config.LinkColumn("Lamaran", display_text="Buka ↗"),
-                "Seen": st.column_config.NumberColumn("Seen", min_value=1, format="%d"),
                 "Acuan Finansial": st.column_config.TextColumn("Biaya Hidup (Nafkah)"),
                 "Financial Signal": st.column_config.TextColumn("Financial"),
             },
@@ -201,9 +182,9 @@ with tab_search:
 
         export = process_job_data(st.session_state.raw_jobs.copy())
         export_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Location Match", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Location Match", "Why Match", "date_posted", "title", "company",
             "location", "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", "Acuan Finansial", "Financial Signal",
-            "job_url", "description", "Seen",
+            "job_url", "description",
         ]
         export = export[[c for c in export_cols if c in export.columns]]
         csv = export.to_csv(index=False).encode("utf-8-sig")
