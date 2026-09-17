@@ -6,6 +6,7 @@ from time import perf_counter
 
 import pandas as pd
 
+from discovery import search_searxng, searxng_url
 from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
@@ -61,11 +62,31 @@ def classify_error(error: str | None) -> str:
     return "ERROR"
 
 
+def _discover_with_searxng(search_term: str, location: str, results_wanted: int) -> tuple[pd.DataFrame, SourceResult]:
+    endpoint = searxng_url()
+    started = datetime.now(timezone.utc).isoformat()
+    started_clock = perf_counter()
+    if not endpoint:
+        return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, 0, 0, "SEARXNG_URL not configured", started)
+
+    query = " ".join(part for part in (search_term.strip(), location.strip()) if part)
+    outcome = search_searxng(endpoint, query, max_results=results_wanted)
+    duration_ms = int((perf_counter() - started_clock) * 1000)
+    if outcome.error:
+        return pd.DataFrame(), SourceResult(
+            "searxng", classify_error(outcome.error), 0, duration_ms, 1, outcome.error, started
+        )
+    count = len(outcome.dataframe)
+    if count:
+        return outcome.dataframe, SourceResult("searxng", "SUCCESS", count, duration_ms, 1, None, started)
+    return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, duration_ms, 1, None, started)
+
+
 def search_sources(
     sites: list[str], *, search_term: str, location: str, country_indeed: str,
     results_wanted: int, hours_old: int, proxy: str = None,
 ) -> SearchRun:
-    """Run selected sources sequentially and return jobs plus observability."""
+    """Run selected JobSpy sources plus optional configured SearXNG discovery."""
     frames: list[pd.DataFrame] = []
     results: list[SourceResult] = []
 
@@ -103,6 +124,11 @@ def search_sources(
             duration_ms=duration_ms, attempts=outcome.attempts,
             started_at=started,
         ))
+
+    discovered, discovery_status = _discover_with_searxng(search_term, location, results_wanted)
+    if not discovered.empty:
+        frames.append(discovered)
+    results.append(discovery_status)
 
     jobs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     return SearchRun(jobs=jobs, sources=tuple(results))
