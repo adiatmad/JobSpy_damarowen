@@ -1,0 +1,2 @@
+# Optional integrations; the core app does not require these.
+crawl4ai>=0.7.0
