@@ -13,6 +13,7 @@ def test_score_jobs_prefers_title_match():
     assert result.iloc[0]["title"] == "GIS Analyst"
     assert result.iloc[0]["Match Score"] > result.iloc[1]["Match Score"]
     assert result.iloc[0]["Relevance"] == "Strong"
+    assert "Novelty" not in result.columns
 
 
 def test_unrelated_title_cannot_look_like_strong_keyword_match():
@@ -68,7 +69,7 @@ def test_location_does_not_partially_match_different_city():
     south = result[result["location"].str.contains("Selatan")].iloc[0]
     west = result[result["location"].str.contains("Barat")].iloc[0]
     assert south["Location Match"] == "Match"
-    assert west["Location Match"] == "Match"  # same city; district preference is intentionally not modeled yet
+    assert west["Location Match"] == "Match"
 
 
 def test_broad_indonesia_location_does_not_penalize_regional_jobs():
@@ -81,23 +82,13 @@ def test_broad_indonesia_location_does_not_penalize_regional_jobs():
     assert all(result["Location Match"] == "Match")
 
 
-def test_seen_history_reduces_score():
+def test_score_is_independent_of_job_history():
     jobs = pd.DataFrame([
-        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "Work Type": "On-site", "date_posted": "2026-09-13", "posted_age_hours": 3, "job_url": "https://x/1"},
+        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "posted_age_hours": 3, "job_url": "https://x/1"},
     ])
-    fresh = score_jobs(jobs, "GIS Analyst", "Jakarta")
-    seen = score_jobs(jobs, "GIS Analyst", "Jakarta", history={"https://x/1": {"seen_count": 3}})
-    assert seen.iloc[0]["Match Score"] < fresh.iloc[0]["Match Score"]
-    assert "sudah terlihat 3x" in seen.iloc[0]["Why Match"]
-
-
-def test_possible_repost_is_flagged_and_penalized():
-    jobs = pd.DataFrame([
-        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "posted_age_hours": 3, "job_url": "https://x/new"},
-    ])
-    result = score_jobs(jobs, "GIS Analyst", "Jakarta", history={"https://x/new": {"seen_count": 0, "fingerprint_count": 1, "other_url_count": 1}})
-    assert result.iloc[0]["Novelty"] == "Possible repost"
-    assert "kemungkinan repost" in result.iloc[0]["Why Match"]
+    first = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    second = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    assert first.iloc[0]["Match Score"] == second.iloc[0]["Match Score"]
 
 
 def test_deduplicate_jobs_keeps_same_title_company_in_different_locations():
