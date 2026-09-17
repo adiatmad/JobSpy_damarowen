@@ -6,7 +6,7 @@ from time import perf_counter
 
 import pandas as pd
 
-from discovery import search_searxng, searxng_url
+from discovery import crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
 from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
@@ -60,6 +60,25 @@ def classify_error(error: str | None) -> str:
     if any(token in text for token in ("connection", "connect", "dns", "network")):
         return "NETWORK_ERROR"
     return "ERROR"
+
+
+def _crawl4ai_enrich(frame: pd.DataFrame, limit: int = 5) -> tuple[pd.DataFrame, str | None]:
+    """Render only a small discovery sample when browser fallback is explicitly enabled."""
+    if frame.empty or not crawl4ai_enabled():
+        return frame, None
+    enriched = frame.copy()
+    errors = 0
+    for index, row in enriched.head(limit).iterrows():
+        try:
+            markdown = fetch_with_crawl4ai(str(row.get("job_url", "")))
+            if markdown.strip():
+                current = str(row.get("description", "")).strip()
+                if len(markdown) > len(current):
+                    enriched.at[index, "description"] = markdown[:20000]
+                    enriched.at[index, "discovery_method"] = "searxng+crawl4ai"
+        except Exception:
+            errors += 1
+    return enriched, (f"Crawl4AI gagal pada {errors} hasil" if errors else None)
 
 
 def _discover_with_searxng(search_term: str, location: str, results_wanted: int) -> tuple[pd.DataFrame, SourceResult]:
@@ -125,10 +144,18 @@ def search_sources(
             started_at=started,
         ))
 
-    discovered, discovery_status = _discover_with_searxng(search_term, location, results_wanted)
-    if not discovered.empty:
-        frames.append(discovered)
-    results.append(discovery_status)
+    endpoint = searxng_url()
+    if endpoint:
+        discovered, discovery_status = _discover_with_searxng(search_term, location, results_wanted)
+        discovered, crawl_error = _crawl4ai_enrich(discovered)
+        if crawl_error:
+            discovery_status = SourceResult(
+                discovery_status.source, discovery_status.status, discovery_status.result_count,
+                discovery_status.duration_ms, discovery_status.attempts, crawl_error, discovery_status.started_at,
+            )
+        if not discovered.empty:
+            frames.append(discovered)
+        results.append(discovery_status)
 
     jobs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     return SearchRun(jobs=jobs, sources=tuple(results))
