@@ -1,8 +1,8 @@
 """Optional discovery helpers for search-engine results and browser fallback.
 
-The core application does not require either integration. Set ``SEARXNG_URL``
-to enable metasearch discovery, and install the optional discovery dependencies
-before enabling Crawl4AI. Browser crawling is deliberately opt-in and bounded.
+The core application does not require these integrations. Set ``SEARXNG_URL``
+to enable metasearch discovery, and explicitly enable Scrapling or Crawl4AI
+before using page enrichment. Enrichment is deliberately bounded.
 """
 
 from __future__ import annotations
@@ -44,13 +44,7 @@ def _searxng_endpoint(base_url: str) -> str:
 
 
 def build_career_discovery_queries(search_term: str, location: str = "") -> list[str]:
-    """Build a small set of focused career-page discovery queries.
-
-    The patterns are inspired by the reference dorking projects, but are
-    constrained to benign job discovery. They are discovery heuristics only:
-    a result is never treated as a verified vacancy until it passes JobSpy's
-    normal validation pipeline.
-    """
+    """Build a small set of focused career-page discovery queries."""
     term = search_term.strip()
     place = location.strip()
     if not term:
@@ -120,6 +114,27 @@ def search_searxng(
         return DiscoveryResult(pd.DataFrame(rows))
     except (requests.RequestException, ValueError, TypeError) as exc:
         return DiscoveryResult(pd.DataFrame(), str(exc))
+
+
+def scrapling_enabled() -> bool:
+    """Return whether optional Scrapling enrichment was explicitly enabled."""
+    return os.getenv("JOBSPY_SCRAPLING", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def fetch_with_scrapling(url: str) -> str:
+    """Fetch a discovered page with Scrapling and return main-content markdown.
+
+    The import is lazy so the core application remains usable without the
+    optional dependency. Scrapling is used as a bounded page-enrichment layer,
+    not as a replacement for JobSpy's structured source adapters.
+    """
+    if not url.strip():
+        raise ValueError("URL is empty")
+    from scrapling.fetchers import Fetcher
+
+    page = Fetcher.get(url.strip())
+    markdown = page.markdown(main_content_only=True)
+    return str(markdown or "")
 
 
 async def _crawl4ai_markdown(url: str) -> str:
