@@ -49,23 +49,13 @@ def test_broad_indonesia_location_does_not_penalize_regional_jobs():
     assert all("lokasi berbeda" not in reason for reason in result["Why Match"])
 
 
-def test_seen_history_reduces_score():
+def test_historical_state_does_not_change_match_score():
     jobs = pd.DataFrame([
-        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "Work Type": "On-site", "date_posted": "2026-09-13", "posted_age_hours": 3, "job_url": "https://x/1"},
+        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "Work Type": "On-site", "date_posted": "2026-09-13", "posted_age_hours": 3},
     ])
-    fresh = score_jobs(jobs, "GIS Analyst", "Jakarta")
-    seen = score_jobs(jobs, "GIS Analyst", "Jakarta", history={"https://x/1": {"seen_count": 3}})
-    assert seen.iloc[0]["Match Score"] < fresh.iloc[0]["Match Score"]
-    assert "sudah terlihat 3x" in seen.iloc[0]["Why Match"]
-
-
-def test_possible_repost_is_flagged_and_penalized():
-    jobs = pd.DataFrame([
-        {"title": "GIS Analyst", "description": "", "location": "Jakarta", "posted_age_hours": 3, "job_url": "https://x/new"},
-    ])
-    result = score_jobs(jobs, "GIS Analyst", "Jakarta", history={"https://x/new": {"seen_count": 0, "fingerprint_count": 1, "other_url_count": 1}})
-    assert result.iloc[0]["Novelty"] == "Possible repost"
-    assert "kemungkinan repost" in result.iloc[0]["Why Match"]
+    result = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    assert result.iloc[0]["Match Score"] == 88
+    assert "Novelty" not in result.columns
 
 
 def test_deduplicate_jobs_keeps_same_title_company_in_different_locations():
