@@ -13,7 +13,9 @@ Search Engine
     ├── JobSpy source adapters
     └── optional SearXNG discovery
             ↓
-      optional Crawl4AI rendering
+      optional Scrapling enrichment
+            ↓
+      optional Crawl4AI browser fallback
             ↓
 Validation + freshness + URL normalization
     ↓
@@ -31,7 +33,7 @@ SQLite Job Memory
 - `app.py` — Streamlit presentation layer
 - `scraper.py` — JobSpy execution, retry and timeout handling
 - `search_engine.py` — source orchestration and source-health reporting
-- `discovery.py` — optional SearXNG discovery and Crawl4AI browser fallback
+- `discovery.py` — optional SearXNG discovery, Scrapling enrichment, and Crawl4AI browser fallback
 - `pipeline.py` — validation, freshness, URL normalization, deduplication and Nafkah enrichment
 - `intelligence.py` — deterministic, history-independent job ranking
 - `storage.py` — SQLite persistence for jobs, sighting history, application status, and source/search history
@@ -101,17 +103,29 @@ Set `SEARXNG_URL` to a SearXNG instance to add metasearch discovery to the norma
 
 SearXNG results with unknown posting dates remain subject to the normal freshness rules. If a freshness window is active, they are excluded unless the user explicitly allows unknown dates.
 
-### Crawl4AI
+### Scrapling
 
-Crawl4AI is an optional browser-rendering fallback for discovered pages that need JavaScript rendering. It is deliberately disabled by default.
+Scrapling is an optional page-enrichment layer for discovered URLs. It is useful when the SearXNG result has only a short search snippet and the source page can provide stronger job evidence. It is explicitly opt-in and is attempted before Crawl4AI because it does not require a browser session for the normal fetch path.
 
-Install the optional dependency:
+Install the optional dependencies:
 
 ```bash
 python -m pip install -r requirements-discovery.txt
 ```
 
-Then explicitly enable it:
+Enable Scrapling explicitly:
+
+```text
+JOBSPY_SCRAPLING=1
+```
+
+Only a small bounded discovery sample is enriched. Scrapling does not replace the structured JobSpy source adapters, and enrichment does not turn a discovered page into a verified vacancy.
+
+### Crawl4AI
+
+Crawl4AI is an optional browser-rendering fallback for discovered pages that need JavaScript rendering. It is deliberately disabled by default. When both optional fetchers are enabled, Scrapling is tried first and Crawl4AI is used only if Scrapling fails.
+
+Enable it explicitly:
 
 ```text
 JOBSPY_CRAWL4AI=1
@@ -175,7 +189,7 @@ The project does not require PostgreSQL, Redis, Docker, authentication, or a pai
 - **Evidence over cleverness.**
 - **Source failures are first-class data.**
 - **Cheap retrieval before browser automation.**
-- **Browser automation is opt-in and bounded.**
+- **Optional page enrichment is bounded and opt-in.**
 - **No source-specific scraping logic in the UI.**
 - **Every useful result should be traceable to a source.**
 - **Job Memory persists history but does not silently change ranking.**
