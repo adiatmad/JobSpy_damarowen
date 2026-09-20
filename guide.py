@@ -19,6 +19,13 @@ def render_search_guide() -> None:
             "- **Support & Operations:** [Katalog Customer Support (Wasian)](https://wasian.my.id/remoteworks/?cat=Customer+Support)"
         )
 
+    with st.expander("🌍 Katalog remote-work untuk eksplorasi sumber"):
+        st.markdown(
+            "- [Awesome Remote Job](https://github.com/lukasz-madon/awesome-remote-job) — katalog kurasi job board, aggregator, dan sumber remote work.\n"
+            "- Perlakukan katalog ini sebagai **peta sumber**, bukan feed lowongan JobSpy. Jangan menganggap semua entri aktif, valid, atau relevan untuk lokasi/keyword pencarian.\n"
+            "- Jika sebuah sumber ingin diintegrasikan ke pipeline, verifikasi URL, akses, freshness, cakupan, dan kualitas datanya terlebih dahulu."
+        )
+
     with st.expander("🧩 Direktori API untuk eksplorasi sumber baru"):
         st.markdown(
             "- [Public APIs — Jobs](https://github.com/public-apis/public-apis#jobs) — gunakan sebagai **katalog kandidat**, bukan sebagai sumber lowongan langsung.\n"
@@ -36,6 +43,21 @@ def render_search_guide() -> None:
 
     st.divider()
     st.subheader("Bagian 2: Menembus Hidden Job Market")
+    with st.expander("🔎 Web discovery dengan SearXNG"):
+        st.markdown(
+            """
+            Jika `SEARXNG_URL` dikonfigurasi, JobSpy menambahkan SearXNG sebagai **discovery layer** di samping source adapter utama.
+
+            Query discovery diarahkan ke halaman karier dengan pola seperti:
+            - `"Nama Posisi" "Lokasi"`
+            - `inurl:careers` / `inurl:jobs`
+            - `intitle:"we're hiring"` / `intitle:"join our team"`
+            - Untuk pencarian remote, istilah `remote`, `work from home`, dan `distributed` ikut digunakan.
+
+            **Batas penting:** hasil SearXNG adalah kandidat untuk diperiksa, bukan otomatis lowongan terverifikasi. Tanggal tidak diketahui tetap tunduk pada aturan freshness JobSpy.
+            """
+        )
+
     with st.expander("🕵️ Query untuk X / Threads"):
         st.markdown(
             """
