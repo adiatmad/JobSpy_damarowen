@@ -1,4 +1,8 @@
-"""Explainable, deterministic job-ranking heuristics."""
+"""Explainable, deterministic job-ranking heuristics.
+
+The ranking layer is intentionally local and evidence-based. It does not call an
+LLM, infer candidate suitability, or use application history as a relevance signal.
+"""
 
 from __future__ import annotations
 
@@ -60,13 +64,18 @@ def _relevance(title_hits: int, description_hits: int, query_tokens: set[str]) -
     return "Weak", 0, None
 
 
-def score_jobs(df: pd.DataFrame, search_term: str, location: str = "", history: dict[str, dict] | None = None) -> pd.DataFrame:
+def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.DataFrame:
+    """Score jobs using only evidence contained in the search request and job row.
+
+    Application status, sightings, and other historical state deliberately do not
+    affect Match Score. Those belong to the user's tracker/memory layer, not to
+    relevance ranking.
+    """
     if df is None or df.empty:
         return pd.DataFrame() if df is None else df.copy()
     result = df.copy()
     query_tokens = _tokens(search_term)
-    history = history or {}
-    scores, reasons, relevance_labels, novelty_labels = [], [], [], []
+    scores, reasons, relevance_labels = [], [], []
 
     for _, row in result.iterrows():
         title_tokens = _tokens(row.get("title", ""))
@@ -98,27 +107,11 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "", history: 
         if str(row.get("Work Type", "")).lower() == "remote":
             why.append("remote")
 
-        url = str(row.get("job_url", ""))
-        previous = history.get(url, {})
-        seen_count = int(previous.get("seen_count", 0) or 0)
-        other_url_count = int(previous.get("other_url_count", 0) or 0)
-        if other_url_count > 0:
-            novelty_labels.append("Possible repost")
-            score -= 5
-            why.append("kemungkinan repost")
-        elif seen_count > 0:
-            novelty_labels.append("Seen before")
-            score -= min(10, seen_count * 3)
-            why.append(f"sudah terlihat {seen_count}x")
-        else:
-            novelty_labels.append("New")
-
         scores.append(max(0, min(100, score)))
         reasons.append("; ".join(why) if why else "bukti kecocokan terbatas")
         relevance_labels.append(relevance)
 
     result["Match Score"] = scores
     result["Relevance"] = relevance_labels
-    result["Novelty"] = novelty_labels
     result["Why Match"] = reasons
     return result.sort_values(["Match Score", "posted_age_hours", "date_posted"], ascending=[False, True, False], na_position="last").reset_index(drop=True)
