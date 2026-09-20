@@ -1,2 +1,5 @@
 # Optional integrations; the core app does not require these.
+# Scrapling: lightweight/adaptive page fetching and main-content extraction.
+scrapling>=0.4.15
+# Crawl4AI: browser-rendering fallback for JavaScript-heavy pages.
 crawl4ai>=0.7.0
