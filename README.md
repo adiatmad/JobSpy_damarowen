@@ -195,3 +195,7 @@ The project does not require PostgreSQL, Redis, Docker, authentication, or a pai
 - **Job Memory persists history but does not silently change ranking.**
 - **Do not build multi-user infrastructure before real usage requires it.**
 - **Do not add features merely because they are technically interesting.**
+
+## AI-Assisted Development
+
+This project was developed and/or maintained with AI assistance. AI was used to support parts of the design, implementation, documentation, and/or maintenance workflow. The human maintainer remains responsible for reviewing, validating, and approving the project's code and outputs.
