@@ -35,6 +35,8 @@ JobSpy is a personal-first tool for finding **valid and current job information*
 
 ### R6 — Discovery extensions
 - SearXNG is an optional discovery layer. It must not replace source adapters that already provide structured job data.
+- Career-page discovery may use a small bounded set of benign search operators (for example `inurl:careers`, `inurl:jobs`, and hiring-page phrases); these are query heuristics, not vacancy verification rules.
+- External dork/query repositories are treated as design references and source catalogs, not runtime dependencies.
 - Crawl4AI is an optional browser-rendering fallback for difficult discovery pages and is never required for the core application.
 - Browser automation is opt-in and bounded; normal retrieval remains the default.
 - Discovered results with unknown posting dates remain subject to the normal freshness rules.
