@@ -6,7 +6,7 @@ from time import perf_counter
 
 import pandas as pd
 
-from discovery import build_searxng_query, crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
+from discovery import build_career_discovery_queries, crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
 from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
@@ -88,17 +88,31 @@ def _discover_with_searxng(search_term: str, location: str, results_wanted: int)
     if not endpoint:
         return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, 0, 0, "SEARXNG_URL not configured", started)
 
-    query = build_searxng_query(search_term, location)
-    outcome = search_searxng(endpoint, query, max_results=results_wanted)
+    queries = build_career_discovery_queries(search_term, location)
+    if not queries:
+        return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, 0, 0, "query is empty", started)
+
+    frames = []
+    errors = []
+    attempts = 0
+    for query in queries[:3]:
+        outcome = search_searxng(endpoint, query, max_results=results_wanted)
+        attempts += 1
+        if outcome.error:
+            errors.append(outcome.error)
+            continue
+        if not outcome.dataframe.empty:
+            frames.append(outcome.dataframe)
+
     duration_ms = int((perf_counter() - started_clock) * 1000)
-    if outcome.error:
-        return pd.DataFrame(), SourceResult(
-            "searxng", classify_error(outcome.error), 0, duration_ms, 1, outcome.error, started
-        )
-    count = len(outcome.dataframe)
-    if count:
-        return outcome.dataframe, SourceResult("searxng", "SUCCESS", count, duration_ms, 1, None, started)
-    return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, duration_ms, 1, None, started)
+    if frames:
+        discovered = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["job_url"], keep="first")
+        error = "; ".join(errors) if errors else None
+        return discovered, SourceResult("searxng", "SUCCESS", len(discovered), duration_ms, attempts, error, started)
+    if errors:
+        error = "; ".join(errors)
+        return pd.DataFrame(), SourceResult("searxng", classify_error(error), 0, duration_ms, attempts, error, started)
+    return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, duration_ms, attempts, None, started)
 
 
 def search_sources(
