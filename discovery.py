@@ -43,30 +43,42 @@ def _searxng_endpoint(base_url: str) -> str:
     return base if base.endswith("/search") else urljoin(base + "/", "search")
 
 
-def build_searxng_query(search_term: str, location: str = "") -> str:
-    """Build a focused web-discovery query inspired by common career-page dorks.
+def build_career_discovery_queries(search_term: str, location: str = "") -> list[str]:
+    """Build a small set of focused career-page discovery queries.
 
-    This is deliberately a query generator, not a verification rule. SearXNG
-    remains a discovery layer and every result still goes through JobSpy's
-    normal validation, freshness, deduplication, and evidence scoring.
+    The patterns are inspired by the reference dorking projects, but are
+    constrained to benign job discovery. They are discovery heuristics only:
+    a result is never treated as a verified vacancy until it passes JobSpy's
+    normal validation pipeline.
     """
     term = search_term.strip()
     place = location.strip()
     if not term:
-        return ""
+        return []
 
-    parts = [f'"{term}"']
+    base = [f'"{term}"']
     if place:
-        parts.append(f'"{place}"')
+        base.append(f'"{place}"')
+    prefix = " ".join(base)
 
-    career_scope = " OR ".join(CAREER_PATH_TERMS)
-    parts.append(f"({career_scope})")
+    queries = [
+        f"{prefix} (inurl:careers OR inurl:jobs)",
+        f"{prefix} (inurl:join-us OR intitle:\"we're hiring\")",
+        f"{prefix} (intitle:\"join our team\" OR \"careers\")",
+    ]
 
     location_lower = place.casefold()
     if any(token in location_lower for token in ("remote", "worldwide", "anywhere", "global")):
-        parts.append("(" + " OR ".join(REMOTE_TERMS) + ")")
+        remote_scope = "(" + " OR ".join(REMOTE_TERMS) + ")"
+        queries = [f"{query} {remote_scope}" for query in queries]
 
-    return " ".join(parts)
+    return queries
+
+
+def build_searxng_query(search_term: str, location: str = "") -> str:
+    """Backward-compatible single-query form for callers that need one query."""
+    queries = build_career_discovery_queries(search_term, location)
+    return queries[0] if queries else ""
 
 
 def search_searxng(
