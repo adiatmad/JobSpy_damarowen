@@ -15,11 +15,11 @@ Source adapters / JobSpy
     ↓
 Validation + freshness + deduplication
     ↓
-Explainable ranking + job memory
+Explainable evidence ranking
     ↓
 Nafkah financial context
     ↓
-SQLite Job Memory
+SQLite Job Memory / application tracker
 ```
 
 ### Main modules
@@ -66,15 +66,16 @@ Job URLs are normalized to remove common tracking parameters. Exact URL/title/co
 
 ## Ranking philosophy
 
-The current `Match Score` is deliberately **not an AI claim**. It uses evidence present in the search request and job result and explains the score with signals such as:
+The current `Match Score` is deliberately **not an AI claim**. It uses only evidence present in the current search request and job result:
 
 - keyword coverage in the title
 - additional keyword evidence in the description
 - location match or mismatch
 - posting freshness
-- prior sightings in Job Memory
 
-The old implementation double-counted title evidence and could give a Surabaya listing a high score for a Jakarta search. That behavior is intentionally removed.
+Application history, sightings, and novelty are **not relevance evidence** and do not change the Match Score. They remain in Job Memory / the application tracker where they belong.
+
+The implementation follows a useful pattern from the OpenJev/SemIf projects without depending on either project: keep decisions structured, auditable, and explicit about their evidence instead of generating prose and parsing it back into logic. Those projects are references for architecture, not runtime dependencies for JobSpy.
 
 Future CV/skills matching can be added later, but the system should never pretend to know a candidate's suitability without evidence.
 
@@ -120,9 +121,9 @@ The project deliberately does not require PostgreSQL, Redis, Docker, authenticat
 - [x] Conservative URL/title/company deduplication
 - [x] Nafkah financial context restored
 - [x] Automated tests / CI
+- [x] Keep relevance scoring independent from application history
 
 ### Intelligence
-- [x] Cross-search seen-before signal for previously known URLs
 - [ ] Near-duplicate/repost identity across different source URLs
 - [ ] Better freshness/repost signals
 - [ ] CV/skills-based matching
@@ -144,12 +145,16 @@ The project deliberately does not require PostgreSQL, Redis, Docker, authenticat
 
 ## Design principles
 
-Borrowed from the reference projects that informed this architecture:
+Borrowed selectively from the reference projects and our Spec Kit / Anti-Slop workflow:
 
+- **Define the job before changing code.**
+- **Collect evidence before making a claim.**
 - **Evidence over cleverness.**
+- **Prefer typed/structured decisions over generated text that must be parsed.**
 - **Source failures are first-class data.**
 - **Cheap retrieval before expensive browser automation.**
 - **No source-specific scraping logic in the UI.**
 - **Every useful result should be traceable to a source.**
+- **Keep historical tracking separate from current-search relevance.**
 - **Do not build multi-user infrastructure before real usage requires it.**
 - **Do not add features merely because they are technically interesting.**
