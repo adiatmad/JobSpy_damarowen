@@ -37,7 +37,9 @@ JobSpy is a personal-first tool for finding **valid and current job information*
 - SearXNG is an optional discovery layer. It must not replace source adapters that already provide structured job data.
 - Career-page discovery may use a small bounded set of benign search operators (for example `inurl:careers`, `inurl:jobs`, and hiring-page phrases); these are query heuristics, not vacancy verification rules.
 - External dork/query repositories are treated as design references and source catalogs, not runtime dependencies.
+- Scrapling is an optional page-enrichment layer for discovered URLs. It is explicitly enabled, bounded, and attempted before browser automation.
 - Crawl4AI is an optional browser-rendering fallback for difficult discovery pages and is never required for the core application.
+- When both optional fetchers are enabled, Scrapling is attempted before Crawl4AI; Crawl4AI is used only when the Scrapling path fails.
 - Browser automation is opt-in and bounded; normal retrieval remains the default.
 - Discovered results with unknown posting dates remain subject to the normal freshness rules.
 
@@ -49,6 +51,7 @@ JobSpy is a personal-first tool for finding **valid and current job information*
 - Paid external services
 - Making every search result a "verified vacancy"
 - Ranking based on prior sightings or repost guesses
+- Replacing the existing JobSpy source adapters with a general crawling framework
 
 ## Acceptance criteria
 
@@ -57,6 +60,8 @@ JobSpy is a personal-first tool for finding **valid and current job information*
 3. Jakarta vs Surabaya is an explicit location mismatch when Jakarta is requested.
 4. Job Memory still records repeated sightings and application status without changing Match Score.
 5. SearXNG is inactive unless `SEARXNG_URL` is configured.
-6. Crawl4AI is inactive unless `JOBSPY_CRAWL4AI` is explicitly enabled and the optional dependency is installed.
-7. Core tests pass without SearXNG, Crawl4AI, or any LLM/API key.
-8. README and development artifacts describe these boundaries accurately.
+6. Scrapling is inactive unless `JOBSPY_SCRAPLING` is explicitly enabled and the optional dependency is installed.
+7. Crawl4AI is inactive unless `JOBSPY_CRAWL4AI` is explicitly enabled and the optional dependency is installed.
+8. When both optional fetchers are enabled, a successful Scrapling enrichment prevents a Crawl4AI call for that result.
+9. Core tests pass without SearXNG, Scrapling, Crawl4AI, or any LLM/API key.
+10. README and development artifacts describe these boundaries accurately.
