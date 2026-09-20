@@ -30,7 +30,6 @@ def test_build_searxng_query_targets_career_pages():
     assert '"Surabaya"' in query
     assert "inurl:careers" in query
     assert "inurl:jobs" in query
-    assert "intitle:\"we're hiring\"" in query
 
 
 def test_build_searxng_query_adds_remote_terms_for_remote_search():
@@ -88,10 +87,10 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
         "scrape_one_site_detailed",
         lambda **kwargs: ScrapeResult(pd.DataFrame(), None, 1),
     )
-    captured = {}
+    captured = {"queries": []}
 
     def fake_search(*args, **kwargs):
-        captured["query"] = args[1]
+        captured["queries"].append(args[1])
         return discovery.DiscoveryResult(pd.DataFrame([{
             "title": "GIS Analyst", "company": "", "location": "", "date_posted": "Unknown",
             "posted_age_hours": pd.NA, "description": "GIS role", "job_url": "https://example.com/job", "site": "searxng",
@@ -105,6 +104,9 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
     assert len(result.jobs) == 1
     assert result.sources[-1].source == "searxng"
     assert result.sources[-1].status == "SUCCESS"
-    assert '"GIS Analyst"' in captured["query"]
-    assert '"Jakarta"' in captured["query"]
-    assert "inurl:careers" in captured["query"]
+    assert len(captured["queries"]) == 3
+    assert all('"GIS Analyst"' in query for query in captured["queries"])
+    assert all('"Jakarta"' in query for query in captured["queries"])
+    assert any("inurl:careers" in query for query in captured["queries"])
+    assert any("inurl:join-us" in query for query in captured["queries"])
+    assert any('intitle:"join our team"' in query for query in captured["queries"])
