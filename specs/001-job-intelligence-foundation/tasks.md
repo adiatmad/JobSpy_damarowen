@@ -5,8 +5,10 @@
 - [x] Preserve deterministic location matching and regression coverage.
 - [x] Add optional SearXNG discovery adapter and source-health reporting.
 - [x] Add bounded career-page query variants inspired by external dork/query references.
-- [x] Add optional Crawl4AI browser fallback boundary with explicit opt-in.
-- [x] Keep optional browser dependency out of core requirements.
+- [x] Add optional Scrapling page-enrichment layer with explicit opt-in.
+- [x] Prefer Scrapling before Crawl4AI when both optional enrichers are enabled.
+- [x] Add bounded Crawl4AI browser fallback boundary with explicit opt-in.
+- [x] Keep optional browser/fetch dependencies out of core requirements.
 - [x] Add discovery regression tests without requiring external services.
 - [x] Document product scope and quality gates.
 - [ ] Run the local full test suite on the user's Python 3.12 environment.
