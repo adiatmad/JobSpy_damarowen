@@ -142,4 +142,10 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.Dat
     result["Relevance"] = relevance_labels
     result["Why Match"] = reasons
     result["Location Match"] = location_labels
-    return result.sort_values(["Match Score", "posted_age_hours", "date_posted"], ascending=[False, True, False], na_position="last").reset_index(drop=True)
+
+    # Unit callers and discovery sources may omit date_posted. Sort only on
+    # evidence fields that are actually present instead of requiring a schema
+    # that the scoring function itself does not need.
+    sort_by = [column for column in ("Match Score", "posted_age_hours", "date_posted") if column in result.columns]
+    ascending = [False if column == "Match Score" else True if column == "posted_age_hours" else False for column in sort_by]
+    return result.sort_values(sort_by, ascending=ascending, na_position="last").reset_index(drop=True)
