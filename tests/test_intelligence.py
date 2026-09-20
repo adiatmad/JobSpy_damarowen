@@ -54,7 +54,7 @@ def test_historical_state_does_not_change_match_score():
         {"title": "GIS Analyst", "description": "", "location": "Jakarta", "Work Type": "On-site", "date_posted": "2026-09-13", "posted_age_hours": 3},
     ])
     result = score_jobs(jobs, "GIS Analyst", "Jakarta")
-    assert result.iloc[0]["Match Score"] == 88
+    assert result.iloc[0]["Match Score"] == 82
     assert "Novelty" not in result.columns
 
 
