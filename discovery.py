@@ -16,6 +16,20 @@ import pandas as pd
 import requests
 
 
+CAREER_PATH_TERMS = (
+    "inurl:careers",
+    "inurl:jobs",
+    "inurl:join-us",
+    'intitle:"we\'re hiring"',
+    'intitle:"join our team"',
+)
+REMOTE_TERMS = (
+    "remote",
+    "work from home",
+    "distributed",
+)
+
+
 @dataclass(frozen=True)
 class DiscoveryResult:
     """A discovery outcome that can be represented by the search engine."""
@@ -27,6 +41,32 @@ class DiscoveryResult:
 def _searxng_endpoint(base_url: str) -> str:
     base = base_url.rstrip("/")
     return base if base.endswith("/search") else urljoin(base + "/", "search")
+
+
+def build_searxng_query(search_term: str, location: str = "") -> str:
+    """Build a focused web-discovery query inspired by common career-page dorks.
+
+    This is deliberately a query generator, not a verification rule. SearXNG
+    remains a discovery layer and every result still goes through JobSpy's
+    normal validation, freshness, deduplication, and evidence scoring.
+    """
+    term = search_term.strip()
+    place = location.strip()
+    if not term:
+        return ""
+
+    parts = [f'"{term}"']
+    if place:
+        parts.append(f'"{place}"')
+
+    career_scope = " OR ".join(CAREER_PATH_TERMS)
+    parts.append(f"({career_scope})")
+
+    location_lower = place.casefold()
+    if any(token in location_lower for token in ("remote", "worldwide", "anywhere", "global")):
+        parts.append("(" + " OR ".join(REMOTE_TERMS) + ")")
+
+    return " ".join(parts)
 
 
 def search_searxng(
@@ -63,6 +103,7 @@ def search_searxng(
                 "job_url": url,
                 "site": "searxng",
                 "discovery_source": str(item.get("engine", "searxng")),
+                "discovery_query": query.strip(),
             })
         return DiscoveryResult(pd.DataFrame(rows))
     except (requests.RequestException, ValueError, TypeError) as exc:
