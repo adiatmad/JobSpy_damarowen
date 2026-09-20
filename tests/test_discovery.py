@@ -5,6 +5,25 @@ import search_engine
 from scraper import ScrapeResult
 
 
+
+
+def test_build_career_discovery_queries_returns_bounded_variants():
+    queries = discovery.build_career_discovery_queries("GIS Analyst", "Surabaya")
+    assert len(queries) == 3
+    assert all('"GIS Analyst"' in query for query in queries)
+    assert all('"Surabaya"' in query for query in queries)
+    assert any("inurl:careers" in query for query in queries)
+    assert any("inurl:join-us" in query for query in queries)
+    assert any('intitle:"join our team"' in query for query in queries)
+
+
+def test_build_career_discovery_queries_remote_scope():
+    queries = discovery.build_career_discovery_queries("GIS Analyst", "Remote worldwide")
+    assert len(queries) == 3
+    assert all("remote" in query for query in queries)
+    assert all("work from home" in query for query in queries)
+
+
 def test_build_searxng_query_targets_career_pages():
     query = discovery.build_searxng_query("GIS Analyst", "Surabaya")
     assert '"GIS Analyst"' in query
