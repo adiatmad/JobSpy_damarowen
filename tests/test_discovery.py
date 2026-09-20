@@ -5,6 +5,22 @@ import search_engine
 from scraper import ScrapeResult
 
 
+def test_build_searxng_query_targets_career_pages():
+    query = discovery.build_searxng_query("GIS Analyst", "Surabaya")
+    assert '"GIS Analyst"' in query
+    assert '"Surabaya"' in query
+    assert "inurl:careers" in query
+    assert "inurl:jobs" in query
+    assert "intitle:\"we're hiring\"" in query
+
+
+def test_build_searxng_query_adds_remote_terms_for_remote_search():
+    query = discovery.build_searxng_query("GIS Analyst", "Remote worldwide")
+    assert "remote" in query
+    assert "work from home" in query
+    assert "distributed" in query
+
+
 def test_search_searxng_normalizes_results(monkeypatch):
     class Response:
         def raise_for_status(self):
@@ -17,11 +33,12 @@ def test_search_searxng_normalizes_results(monkeypatch):
             ]}
 
     monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
-    result = discovery.search_searxng("http://searxng.local", "GIS Analyst Jakarta", max_results=5)
+    result = discovery.search_searxng("http://searxng.local", '"GIS Analyst" "Surabaya"', max_results=5)
     assert result.error is None
     assert len(result.dataframe) == 1
     assert result.dataframe.iloc[0]["site"] == "searxng"
     assert result.dataframe.iloc[0]["job_url"] == "https://example.com/job"
+    assert result.dataframe.iloc[0]["discovery_query"] == '"GIS Analyst" "Surabaya"'
 
 
 def test_search_searxng_requires_configured_endpoint():
@@ -52,14 +69,16 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
         "scrape_one_site_detailed",
         lambda **kwargs: ScrapeResult(pd.DataFrame(), None, 1),
     )
-    monkeypatch.setattr(
-        search_engine,
-        "search_searxng",
-        lambda *args, **kwargs: discovery.DiscoveryResult(pd.DataFrame([{
+    captured = {}
+
+    def fake_search(*args, **kwargs):
+        captured["query"] = args[1]
+        return discovery.DiscoveryResult(pd.DataFrame([{
             "title": "GIS Analyst", "company": "", "location": "", "date_posted": "Unknown",
             "posted_age_hours": pd.NA, "description": "GIS role", "job_url": "https://example.com/job", "site": "searxng",
-        }])),
-    )
+        }]))
+
+    monkeypatch.setattr(search_engine, "search_searxng", fake_search)
     result = search_engine.search_sources(
         ["indeed"], search_term="GIS Analyst", location="Jakarta",
         country_indeed="Indonesia", results_wanted=5, hours_old=0,
@@ -67,3 +86,6 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
     assert len(result.jobs) == 1
     assert result.sources[-1].source == "searxng"
     assert result.sources[-1].status == "SUCCESS"
+    assert '"GIS Analyst"' in captured["query"]
+    assert '"Jakarta"' in captured["query"]
+    assert "inurl:careers" in captured["query"]
