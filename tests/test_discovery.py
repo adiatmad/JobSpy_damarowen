@@ -5,8 +5,6 @@ import search_engine
 from scraper import ScrapeResult
 
 
-
-
 def test_build_career_discovery_queries_returns_bounded_variants():
     queries = discovery.build_career_discovery_queries("GIS Analyst", "Surabaya")
     assert len(queries) == 3
@@ -65,6 +63,33 @@ def test_search_searxng_requires_configured_endpoint():
     assert result.error
 
 
+def test_scrapling_is_opt_in(monkeypatch):
+    monkeypatch.delenv("JOBSPY_SCRAPLING", raising=False)
+    assert discovery.scrapling_enabled() is False
+    monkeypatch.setenv("JOBSPY_SCRAPLING", "1")
+    assert discovery.scrapling_enabled() is True
+
+
+def test_fetch_with_scrapling_uses_main_content_markdown(monkeypatch):
+    class FakePage:
+        def markdown(self, main_content_only=False):
+            assert main_content_only is True
+            return "# GIS Analyst\n\nApply here"
+
+    class FakeFetcher:
+        @staticmethod
+        def get(url):
+            assert url == "https://example.com/job"
+            return FakePage()
+
+    import types
+    monkeypatch.setitem(__import__("sys").modules, "scrapling", types.ModuleType("scrapling"))
+    fetchers = types.ModuleType("scrapling.fetchers")
+    fetchers.Fetcher = FakeFetcher
+    monkeypatch.setitem(__import__("sys").modules, "scrapling.fetchers", fetchers)
+    assert discovery.fetch_with_scrapling("https://example.com/job") == "# GIS Analyst\n\nApply here"
+
+
 def test_search_sources_does_not_call_searxng_when_unconfigured(monkeypatch):
     monkeypatch.setattr(search_engine, "searxng_url", lambda: "")
     monkeypatch.setattr(
@@ -97,6 +122,8 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
         }]))
 
     monkeypatch.setattr(search_engine, "search_searxng", fake_search)
+    monkeypatch.setattr(search_engine, "scrapling_enabled", lambda: False)
+    monkeypatch.setattr(search_engine, "crawl4ai_enabled", lambda: False)
     result = search_engine.search_sources(
         ["indeed"], search_term="GIS Analyst", location="Jakarta",
         country_indeed="Indonesia", results_wanted=5, hours_old=0,
@@ -110,3 +137,31 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
     assert any("inurl:careers" in query for query in captured["queries"])
     assert any("inurl:join-us" in query for query in captured["queries"])
     assert any('intitle:"join our team"' in query for query in captured["queries"])
+
+
+def test_search_sources_uses_scrapling_before_crawl4ai(monkeypatch):
+    monkeypatch.setattr(search_engine, "searxng_url", lambda: "http://searxng.local")
+    monkeypatch.setattr(search_engine, "scrapling_enabled", lambda: True)
+    monkeypatch.setattr(search_engine, "crawl4ai_enabled", lambda: True)
+    monkeypatch.setattr(search_engine, "fetch_with_scrapling", lambda url: "# Full job page")
+    monkeypatch.setattr(search_engine, "fetch_with_crawl4ai", lambda url: (_ for _ in ()).throw(AssertionError("Crawl4AI should not run when Scrapling succeeds")))
+    monkeypatch.setattr(
+        search_engine,
+        "scrape_one_site_detailed",
+        lambda **kwargs: ScrapeResult(pd.DataFrame(), None, 1),
+    )
+    monkeypatch.setattr(
+        search_engine,
+        "search_searxng",
+        lambda *args, **kwargs: discovery.DiscoveryResult(pd.DataFrame([{
+            "title": "GIS Analyst", "company": "", "location": "", "date_posted": "Unknown",
+            "posted_age_hours": pd.NA, "description": "short", "job_url": "https://example.com/job", "site": "searxng",
+        }])),
+    )
+
+    result = search_engine.search_sources(
+        ["indeed"], search_term="GIS Analyst", location="Jakarta",
+        country_indeed="Indonesia", results_wanted=5, hours_old=0,
+    )
+    assert result.jobs.iloc[0]["description"] == "# Full job page"
+    assert result.jobs.iloc[0]["discovery_method"] == "searxng+scrapling"
