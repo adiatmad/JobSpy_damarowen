@@ -6,7 +6,7 @@ from time import perf_counter
 
 import pandas as pd
 
-from discovery import crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
+from discovery import build_searxng_query, crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
 from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
@@ -88,7 +88,7 @@ def _discover_with_searxng(search_term: str, location: str, results_wanted: int)
     if not endpoint:
         return pd.DataFrame(), SourceResult("searxng", "EMPTY", 0, 0, 0, "SEARXNG_URL not configured", started)
 
-    query = " ".join(part for part in (search_term.strip(), location.strip()) if part)
+    query = build_searxng_query(search_term, location)
     outcome = search_searxng(endpoint, query, max_results=results_wanted)
     duration_ms = int((perf_counter() - started_clock) * 1000)
     if outcome.error:
