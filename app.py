@@ -117,27 +117,13 @@ with tab_search:
         if not jobs.empty:
             jobs["Work Type"] = jobs.apply(categorize_work_type, axis=1)
             jobs["job_fingerprint"] = jobs.apply(job_fingerprint, axis=1)
-
-            url_history = store.get_job_history(jobs["job_url"].tolist())
-            fingerprint_history = store.get_fingerprint_history(jobs["job_fingerprint"].tolist())
-            history = {}
-            for _, row in jobs.iterrows():
-                url = row["job_url"]
-                fingerprint = row["job_fingerprint"]
-                previous = dict(url_history.get(url, {}))
-                fingerprint_record = fingerprint_history.get(fingerprint, {})
-                distinct_urls = int(fingerprint_record.get("distinct_urls", 0) or 0)
-                previous["fingerprint_count"] = distinct_urls
-                previous["other_url_count"] = max(0, distinct_urls - (1 if url in url_history else 0))
-                history[url] = previous
-
             statuses = store.get_application_statuses(jobs["job_url"].tolist())
-            jobs = score_jobs(jobs, settings["search_term"], settings["location"], history=history)
+            jobs = score_jobs(jobs, settings["search_term"], settings["location"])
             jobs = process_job_data(jobs)
             jobs["application_status"] = jobs["job_url"].map(statuses).fillna("new")
 
-            # Persist after scoring so current-search sightings don't become
-            # "seen before" or "repost" evidence for the same run.
+            # Persist only after scoring. Historical state is kept for the tracker,
+            # but never fed back into Match Score or relevance decisions.
             store.upsert_jobs(jobs)
             store.record_search(settings["search_term"], settings["location"], jobs, run.sources)
 
@@ -174,7 +160,7 @@ with tab_search:
             jobs = jobs[jobs["Relevance"].isin(relevance_filter)]
 
         display_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Why Match", "date_posted", "title", "company",
             "Lokasi & Gaji", "Acuan Finansial", "Financial Signal", "Info UMR", "Est. Biaya Hidup", "Work Type",
             "location", "Seen", "job_url",
         ]
@@ -201,7 +187,7 @@ with tab_search:
 
         export = process_job_data(st.session_state.raw_jobs.copy())
         export_cols = [
-            "application_status", "Match Score", "Relevance", "Novelty", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Why Match", "date_posted", "title", "company",
             "location", "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", "Acuan Finansial", "Financial Signal",
             "job_url", "description", "Seen",
         ]
