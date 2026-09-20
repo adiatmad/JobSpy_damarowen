@@ -6,7 +6,15 @@ from time import perf_counter
 
 import pandas as pd
 
-from discovery import build_career_discovery_queries, crawl4ai_enabled, fetch_with_crawl4ai, search_searxng, searxng_url
+from discovery import (
+    build_career_discovery_queries,
+    crawl4ai_enabled,
+    fetch_with_crawl4ai,
+    fetch_with_scrapling,
+    scrapling_enabled,
+    search_searxng,
+    searxng_url,
+)
 from scraper import scrape_one_site_detailed
 
 SOURCE_STATUSES = {
@@ -62,23 +70,53 @@ def classify_error(error: str | None) -> str:
     return "ERROR"
 
 
+def _enrich_with_optional_fetcher(url: str) -> tuple[str, str]:
+    """Try the cheapest explicitly enabled enrichment path first.
+
+    Scrapling is preferred for normal discovered pages because it can fetch and
+    parse them without requiring a browser session. Crawl4AI remains the
+    explicit browser-rendering fallback for JavaScript-heavy pages.
+    """
+    errors: list[str] = []
+    if scrapling_enabled():
+        try:
+            markdown = fetch_with_scrapling(url)
+            if markdown.strip():
+                return markdown, "scrapling"
+        except Exception as exc:
+            errors.append(f"Scrapling: {exc}")
+
+    if crawl4ai_enabled():
+        try:
+            markdown = fetch_with_crawl4ai(url)
+            if markdown.strip():
+                return markdown, "crawl4ai"
+        except Exception as exc:
+            errors.append(f"Crawl4AI: {exc}")
+
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    raise RuntimeError("No optional page fetcher enabled")
+
+
 def _crawl4ai_enrich(frame: pd.DataFrame, limit: int = 5) -> tuple[pd.DataFrame, str | None]:
-    """Render only a small discovery sample when browser fallback is explicitly enabled."""
-    if frame.empty or not crawl4ai_enabled():
+    """Enrich only a small discovery sample with explicitly enabled fetchers."""
+    if frame.empty or not (scrapling_enabled() or crawl4ai_enabled()):
         return frame, None
     enriched = frame.copy()
     errors = 0
     for index, row in enriched.head(limit).iterrows():
         try:
-            markdown = fetch_with_crawl4ai(str(row.get("job_url", "")))
-            if markdown.strip():
-                current = str(row.get("description", "")).strip()
-                if len(markdown) > len(current):
-                    enriched.at[index, "description"] = markdown[:20000]
-                    enriched.at[index, "discovery_method"] = "searxng+crawl4ai"
+            markdown, method = _enrich_with_optional_fetcher(str(row.get("job_url", "")))
+            current = str(row.get("description", "")).strip()
+            if len(markdown) > len(current):
+                enriched.at[index, "description"] = markdown[:20000]
+            enriched.at[index, "discovery_method"] = f"searxng+{method}"
         except Exception:
             errors += 1
-    return enriched, (f"Crawl4AI gagal pada {errors} hasil" if errors else None)
+    if errors:
+        return enriched, f"Page enrichment gagal pada {errors} hasil"
+    return enriched, None
 
 
 def _discover_with_searxng(search_term: str, location: str, results_wanted: int) -> tuple[pd.DataFrame, SourceResult]:
@@ -161,11 +199,11 @@ def search_sources(
     endpoint = searxng_url()
     if endpoint:
         discovered, discovery_status = _discover_with_searxng(search_term, location, results_wanted)
-        discovered, crawl_error = _crawl4ai_enrich(discovered)
-        if crawl_error:
+        discovered, enrich_error = _crawl4ai_enrich(discovered)
+        if enrich_error:
             discovery_status = SourceResult(
                 discovery_status.source, discovery_status.status, discovery_status.result_count,
-                discovery_status.duration_ms, discovery_status.attempts, crawl_error, discovery_status.started_at,
+                discovery_status.duration_ms, discovery_status.attempts, enrich_error, discovery_status.started_at,
             )
         if not discovered.empty:
             frames.append(discovered)
