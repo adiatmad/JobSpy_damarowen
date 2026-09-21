@@ -100,3 +100,14 @@ def build_google_search_term(search_term: str, location: str, hours_old: int, ex
                 term += f" -{word.strip()}"
 
     return term
+
+def build_google_career_search_term(search_term: str, location: str = "", remote: bool = False) -> str:
+    """Build a copy/paste Google query for direct career-page discovery."""
+    term = search_term.strip() if search_term and search_term.strip() else "jobs"
+    parts = [f'"{term}"']
+    if location and location.strip():
+        parts.append(f'"{location.strip()}"')
+    parts.append('(inurl:careers OR inurl:jobs OR inurl:join-us OR intitle:"we\'re hiring" OR intitle:"join our team")')
+    if remote:
+        parts.append('(remote OR "work from home" OR distributed)')
+    return " ".join(parts)
