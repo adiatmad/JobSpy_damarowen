@@ -112,10 +112,11 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
         "scrape_one_site_detailed",
         lambda **kwargs: ScrapeResult(pd.DataFrame(), None, 1),
     )
-    captured = {"queries": []}
+    captured = {"queries": [], "limits": []}
 
     def fake_search(*args, **kwargs):
         captured["queries"].append(args[1])
+        captured["limits"].append(kwargs["max_results"])
         return discovery.DiscoveryResult(pd.DataFrame([{
             "title": "GIS Analyst", "company": "", "location": "", "date_posted": "Unknown",
             "posted_age_hours": pd.NA, "description": "GIS role", "job_url": "https://example.com/job", "site": "searxng",
@@ -132,6 +133,7 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
     assert result.sources[-1].source == "searxng"
     assert result.sources[-1].status == "SUCCESS"
     assert len(captured["queries"]) == 3
+    assert captured["limits"] == [2, 2, 2]
     assert len(result.jobs) == 1
     assert all('"GIS Analyst"' in query for query in captured["queries"])
     assert all('"Jakarta"' in query for query in captured["queries"])
