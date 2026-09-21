@@ -44,7 +44,7 @@ def test_search_searxng_normalizes_results(monkeypatch):
 
         def json(self):
             return {"results": [
-                {"title": "GIS Analyst", "url": "https://example.com/job", "content": "GIS role", "engine": "google"},
+                {"title": "GIS Analyst", "url": "https://example.com/job", "content": "GIS role", "engine": "google", "publishedDate": "2026-09-20T10:00:00+00:00"},
                 {"title": "", "url": "https://example.com/no-title", "content": "skip"},
             ]}
 
@@ -54,6 +54,7 @@ def test_search_searxng_normalizes_results(monkeypatch):
     assert len(result.dataframe) == 1
     assert result.dataframe.iloc[0]["site"] == "searxng"
     assert result.dataframe.iloc[0]["job_url"] == "https://example.com/job"
+    assert result.dataframe.iloc[0]["date_posted"] == "2026-09-20T10:00:00+00:00"
     assert result.dataframe.iloc[0]["discovery_query"] == '"GIS Analyst" "Surabaya"'
 
 
