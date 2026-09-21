@@ -31,7 +31,7 @@ SQLite Job Memory
 ### Main modules
 
 - `app.py` — Streamlit presentation layer
-- `scraper.py` — JobSpy execution, retry and timeout handling
+- `scraper.py` — structured JobSpy-source execution, retry and timeout handling
 - `search_engine.py` — source orchestration and source-health reporting
 - `discovery.py` — optional SearXNG discovery, Scrapling enrichment, and Crawl4AI browser fallback
 - `pipeline.py` — validation, freshness, URL normalization, deduplication and Nafkah enrichment
