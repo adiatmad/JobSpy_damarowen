@@ -49,7 +49,7 @@ The core application does **not** require an LLM, API key, SearXNG instance, or 
 
 ## Source health
 
-A failed source is not treated as the same thing as an empty source. JobSpy records states such as:
+A failed source is not treated as the same thing as an empty source. Teman Cari Kerja records states such as:
 
 - `SUCCESS`
 - `EMPTY`
