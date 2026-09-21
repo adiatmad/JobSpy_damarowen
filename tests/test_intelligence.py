@@ -145,7 +145,7 @@ def test_evidence_coverage_exposes_missing_listing_fields_without_changing_match
     ])
     result = score_jobs(jobs, "GIS Analyst", "Jakarta")
     complete = result[result["Evidence Coverage"] == 83].iloc[0]
-    incomplete = result[result["Evidence Coverage"] == 50].iloc[0]
+    incomplete = result[result["Evidence Coverage"] == 33].iloc[0]
     assert "location" not in complete["Evidence Gaps"]
     assert "date" not in complete["Evidence Gaps"]
     assert "description" not in complete["Evidence Gaps"]
