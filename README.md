@@ -99,7 +99,7 @@ Memory is for persistence and tracking; it does not silently alter the ranking o
 
 ### SearXNG
 
-Set `SEARXNG_URL` to a SearXNG instance to add metasearch discovery to the normal JobSpy search. SearXNG is a **discovery layer**, not proof that a result is a valid vacancy.
+Set `SEARXNG_URL` to a SearXNG instance to add metasearch discovery to the normal Teman Cari Kerja search. SearXNG is a **discovery layer**, not proof that a result is a valid vacancy.
 
 SearXNG results with unknown posting dates remain subject to the normal freshness rules. If a freshness window is active, they are excluded unless the user explicitly allows unknown dates.
 
