@@ -21,6 +21,7 @@ Teman Cari Kerja is a personal-first tool for finding **valid and current job in
 - Match scoring uses only observable result/query evidence: title keywords, description keywords, location, freshness, and explicit work-type evidence.
 - Location matching must distinguish known city mismatches.
 - Ranking must be deterministic and explainable.
+- Results expose listing evidence coverage and explicit evidence gaps without treating completeness as proof of vacancy validity.
 - Ranking must not depend on prior sightings, application history, an LLM, or a hidden candidate profile.
 
 ### R4 — Job Memory
@@ -65,3 +66,4 @@ Teman Cari Kerja is a personal-first tool for finding **valid and current job in
 8. When both optional fetchers are enabled, a successful Scrapling enrichment prevents a Crawl4AI call for that result.
 9. Core tests pass without SearXNG, Scrapling, Crawl4AI, or any LLM/API key.
 10. README and development artifacts describe these boundaries accurately.
+11. Evidence Coverage is completeness-only and does not alter Match Score.
