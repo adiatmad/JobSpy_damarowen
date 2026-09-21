@@ -1,6 +1,6 @@
-# JobSpy — Personal Job Intelligence
+# Teman Cari Kerja — Personal Job Intelligence
 
-JobSpy is a **personal-first job-search intelligence tool** for finding useful, current job information from multiple sources. It normalizes results, filters freshness, deduplicates listings, explains a deterministic match score, adds Nafkah financial context, and keeps a local job history.
+**Teman Cari Kerja** is a **personal-first job-search intelligence tool** for finding useful, current job information from multiple sources. It normalizes results, filters freshness, deduplicates listings, explains a deterministic match score, adds Nafkah financial context, and keeps a local job history.
 
 The product goal is deliberately narrower than an AI career platform: **find and surface job information with traceable evidence**. A search result is not automatically a verified vacancy, and the app does not claim to know whether a job is suitable for a candidate beyond the evidence in the search request and listing.
 
