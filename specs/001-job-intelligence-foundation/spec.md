@@ -2,7 +2,7 @@
 
 ## Intent
 
-JobSpy is a personal-first tool for finding **valid and current job information**. The product should surface useful evidence from multiple sources without pretending that search results are automatically verified vacancies or that an AI understands candidate suitability.
+Teman Cari Kerja is a personal-first tool for finding **valid and current job information**. The product should surface useful evidence from multiple sources without pretending that search results are automatically verified vacancies or that an AI understands candidate suitability.
 
 ## User-visible requirements
 
