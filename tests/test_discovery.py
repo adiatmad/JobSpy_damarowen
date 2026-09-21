@@ -132,6 +132,7 @@ def test_search_sources_adds_configured_searxng(monkeypatch):
     assert result.sources[-1].source == "searxng"
     assert result.sources[-1].status == "SUCCESS"
     assert len(captured["queries"]) == 3
+    assert len(result.jobs) == 1
     assert all('"GIS Analyst"' in query for query in captured["queries"])
     assert all('"Jakarta"' in query for query in captured["queries"])
     assert any("inurl:careers" in query for query in captured["queries"])
