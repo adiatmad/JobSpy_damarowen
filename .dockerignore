@@ -1,0 +1,9 @@
+.git
+.github
+.venv*
+__pycache__
+*.pyc
+.pytest_cache
+.streamlit/secrets.toml
+data/*.sqlite3
+*.log
