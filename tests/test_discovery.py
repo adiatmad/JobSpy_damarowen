@@ -57,6 +57,25 @@ def test_search_searxng_normalizes_results(monkeypatch):
     assert result.dataframe.iloc[0]["discovery_query"] == '"GIS Analyst" "Surabaya"'
 
 
+def test_search_searxng_preserves_published_date(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": [{
+                "title": "GIS Analyst",
+                "url": "https://example.com/job",
+                "content": "GIS role",
+                "engine": "google",
+                "publishedDate": "2026-09-20T10:00:00+00:00",
+            }]}
+
+    monkeypatch.setattr(discovery.requests, "get", lambda *args, **kwargs: Response())
+    result = discovery.search_searxng("http://searxng.local", "GIS Analyst", max_results=5)
+    assert result.dataframe.iloc[0]["date_posted"] == "2026-09-20T10:00:00+00:00"
+
+
 def test_search_searxng_requires_configured_endpoint():
     result = discovery.search_searxng("", "GIS Analyst")
     assert result.dataframe.empty
