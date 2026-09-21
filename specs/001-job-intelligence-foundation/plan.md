@@ -30,6 +30,7 @@ SQLite Job Memory
 4. Keep `intelligence.py` deterministic and history-independent.
 5. Keep SQLite behind `JobStore` so persistence can change later without changing search/scoring logic.
 6. Treat SearXNG as discovery, not proof of vacancy validity.
+9. Use **Teman Cari Kerja** as the product name; retain **JobSpy** only when referring to the underlying structured source adapter/library.
 7. Treat Crawl4AI as a bounded browser fallback, not the default transport.
 8. Keep browser-discovery dependencies optional so the core remains easy to install and test.
 

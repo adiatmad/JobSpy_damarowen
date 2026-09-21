@@ -1,6 +1,6 @@
-# JobSpy — Personal Job Intelligence
+# Teman Cari Kerja — Personal Job Intelligence
 
-JobSpy is a **personal-first job-search intelligence tool** for finding useful, current job information from multiple sources. It normalizes results, filters freshness, deduplicates listings, explains a deterministic match score, adds Nafkah financial context, and keeps a local job history.
+**Teman Cari Kerja** is a **personal-first job-search intelligence tool** for finding useful, current job information from multiple sources. It normalizes results, filters freshness, deduplicates listings, explains a deterministic match score, adds Nafkah financial context, and keeps a local job history.
 
 The product goal is deliberately narrower than an AI career platform: **find and surface job information with traceable evidence**. A search result is not automatically a verified vacancy, and the app does not claim to know whether a job is suitable for a candidate beyond the evidence in the search request and listing.
 
@@ -31,7 +31,7 @@ SQLite Job Memory
 ### Main modules
 
 - `app.py` — Streamlit presentation layer
-- `scraper.py` — JobSpy execution, retry and timeout handling
+- `scraper.py` — structured JobSpy-source execution, retry and timeout handling
 - `search_engine.py` — source orchestration and source-health reporting
 - `discovery.py` — optional SearXNG discovery, Scrapling enrichment, and Crawl4AI browser fallback
 - `pipeline.py` — validation, freshness, URL normalization, deduplication and Nafkah enrichment
@@ -49,7 +49,7 @@ The core application does **not** require an LLM, API key, SearXNG instance, or 
 
 ## Source health
 
-A failed source is not treated as the same thing as an empty source. JobSpy records states such as:
+A failed source is not treated as the same thing as an empty source. Teman Cari Kerja records states such as:
 
 - `SUCCESS`
 - `EMPTY`
@@ -99,7 +99,7 @@ Memory is for persistence and tracking; it does not silently alter the ranking o
 
 ### SearXNG
 
-Set `SEARXNG_URL` to a SearXNG instance to add metasearch discovery to the normal JobSpy search. SearXNG is a **discovery layer**, not proof that a result is a valid vacancy.
+Set `SEARXNG_URL` to a SearXNG instance to add metasearch discovery to the normal Teman Cari Kerja search. SearXNG is a **discovery layer**, not proof that a result is a valid vacancy.
 
 SearXNG results with unknown posting dates remain subject to the normal freshness rules. If a freshness window is active, they are excluded unless the user explicitly allows unknown dates.
 

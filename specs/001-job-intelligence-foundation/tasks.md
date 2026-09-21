@@ -11,6 +11,7 @@
 - [x] Keep optional browser/fetch dependencies out of core requirements.
 - [x] Add discovery regression tests without requiring external services.
 - [x] Document product scope and quality gates.
+- [x] Align user-facing product identity to **Teman Cari Kerja** while retaining JobSpy as an implementation/source-layer name.
 - [ ] Run the local full test suite on the user's Python 3.12 environment.
 - [ ] Perform manual Streamlit smoke test for JobSpy sources and the restored guide.
 - [ ] Review final diff against `main` and merge only after all gates pass.
