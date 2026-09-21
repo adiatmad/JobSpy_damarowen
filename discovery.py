@@ -99,11 +99,12 @@ def search_searxng(
             title = str(item.get("title", "")).strip()
             if not url or not title:
                 continue
+            published_date = item.get("publishedDate") or item.get("published_date") or item.get("date") or "Unknown"
             rows.append({
                 "title": title,
                 "company": "",
                 "location": "",
-                "date_posted": "Unknown",
+                "date_posted": str(published_date).strip() or "Unknown",
                 "posted_age_hours": pd.NA,
                 "description": str(item.get("content", "")),
                 "job_url": url,
