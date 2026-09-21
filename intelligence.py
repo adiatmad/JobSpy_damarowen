@@ -91,6 +91,29 @@ def _relevance(title_hits: int, description_hits: int, query_tokens: set[str]) -
     return "Weak", 0, None
 
 
+def _has_salary_evidence(description: str) -> bool:
+    if not description or pd.isna(description):
+        return False
+    text = str(description)
+    patterns = (r"\\b\\d{1,2}\\s?(?:-|–|sampai)\\s?\\d{1,2}\\s?(?:juta|jt)\\b", r"(?:rp|idr)\\s?[\\d\\.\\,]+")
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
+def evidence_quality(row) -> tuple[int, str]:
+    """Measure listing completeness without treating completeness as truth."""
+    checks = [
+        ("title", bool(str(row.get("title", "")).strip())),
+        ("company", bool(str(row.get("company", "")).strip())),
+        ("location", bool(str(row.get("location", "")).strip())),
+        ("date", str(row.get("date_posted", "Unknown")).strip().lower() not in {"", "unknown", "nan"}),
+        ("description", len(str(row.get("description", "")).strip()) >= 80),
+        ("salary", _has_salary_evidence(row.get("description", ""))),
+    ]
+    score = round(sum(ok for _, ok in checks) / len(checks) * 100)
+    gaps = [label for label, ok in checks if not ok]
+    return score, ("; ".join(gaps) if gaps else "lengkap")
+
+
 def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.DataFrame:
     """Rank jobs only from evidence in the query/result; no history-based scoring."""
     if df is None or df.empty:
@@ -98,6 +121,7 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.Dat
     result = df.copy()
     query_tokens = _tokens(search_term)
     scores, reasons, relevance_labels, location_labels = [], [], [], []
+    evidence_scores, evidence_gaps = [], []
 
     for _, row in result.iterrows():
         title_tokens = _tokens(row.get("title", ""))
@@ -135,6 +159,9 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.Dat
             why.append("remote")
 
         scores.append(max(0, min(100, score)))
+        evidence_score, evidence_gap = evidence_quality(row)
+        evidence_scores.append(evidence_score)
+        evidence_gaps.append(evidence_gap)
         reasons.append("; ".join(why) if why else "bukti kecocokan terbatas")
         relevance_labels.append(relevance)
 
@@ -142,6 +169,8 @@ def score_jobs(df: pd.DataFrame, search_term: str, location: str = "") -> pd.Dat
     result["Relevance"] = relevance_labels
     result["Why Match"] = reasons
     result["Location Match"] = location_labels
+    result["Evidence Coverage"] = evidence_scores
+    result["Evidence Gaps"] = evidence_gaps
 
     # Unit callers and discovery sources may omit date_posted. Sort only on
     # evidence fields that are actually present instead of requiring a schema

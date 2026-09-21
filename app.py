@@ -156,7 +156,7 @@ with tab_search:
             jobs = jobs[jobs["Relevance"].isin(relevance_filter)]
 
         display_cols = [
-            "application_status", "Match Score", "Relevance", "Location Match", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Evidence Coverage", "Evidence Gaps", "Location Match", "Why Match", "date_posted", "title", "company",
             "Lokasi & Gaji", "Acuan Finansial", "Financial Signal", "Info UMR", "Est. Biaya Hidup", "Work Type",
             "location", "job_url",
         ]
@@ -166,6 +166,7 @@ with tab_search:
             column_config={
                 "application_status": st.column_config.SelectboxColumn("Status", options=sorted(ALLOWED_STATUSES)),
                 "Match Score": st.column_config.NumberColumn("Match", min_value=0, max_value=100, format="%d"),
+                "Evidence Coverage": st.column_config.NumberColumn("Evidence %", min_value=0, max_value=100, format="%d%%"),
                 "job_url": st.column_config.LinkColumn("Lamaran", display_text="Buka ↗"),
                 "Acuan Finansial": st.column_config.TextColumn("Biaya Hidup (Nafkah)"),
                 "Financial Signal": st.column_config.TextColumn("Financial"),
@@ -182,7 +183,7 @@ with tab_search:
 
         export = process_job_data(st.session_state.raw_jobs.copy())
         export_cols = [
-            "application_status", "Match Score", "Relevance", "Location Match", "Why Match", "date_posted", "title", "company",
+            "application_status", "Match Score", "Relevance", "Evidence Coverage", "Evidence Gaps", "Location Match", "Why Match", "date_posted", "title", "company",
             "location", "Work Type", "Gaji Asli", "Info UMR", "Est. Biaya Hidup", "Acuan Finansial", "Financial Signal",
             "job_url", "description",
         ]

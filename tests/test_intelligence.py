@@ -136,3 +136,21 @@ def test_financial_signal_is_conservative_when_salary_is_missing():
     result = process_job_data(jobs)
     assert result.iloc[0]["Financial Signal"] == "⚪ Gaji tidak diketahui"
     assert "UMR Rp 5.07M" in result.iloc[0]["Acuan Finansial"]
+
+
+def test_evidence_coverage_exposes_missing_listing_fields_without_changing_match_score():
+    jobs = pd.DataFrame([
+        {"title": "GIS Analyst", "company": "Example", "location": "Jakarta", "date_posted": "2026-09-20", "description": "A " * 100, "posted_age_hours": 3},
+        {"title": "GIS Analyst", "company": "Example", "location": "", "date_posted": "Unknown", "description": "", "posted_age_hours": pd.NA},
+    ])
+    result = score_jobs(jobs, "GIS Analyst", "Jakarta")
+    complete = result[result["Evidence Coverage"] == 83].iloc[0]
+    incomplete = result[result["Evidence Coverage"] == 33].iloc[0]
+    assert "location" not in complete["Evidence Gaps"]
+    assert "date" not in complete["Evidence Gaps"]
+    assert "description" not in complete["Evidence Gaps"]
+    assert "salary" in complete["Evidence Gaps"]
+    assert "location" in incomplete["Evidence Gaps"]
+    assert "date" in incomplete["Evidence Gaps"]
+    assert "description" in incomplete["Evidence Gaps"]
+    assert "salary" in incomplete["Evidence Gaps"]

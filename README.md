@@ -80,6 +80,8 @@ Job URLs are normalized to remove common tracking parameters. Exact URL/title/co
 - posting freshness
 - explicit remote/work-type evidence
 
+The results also expose `Evidence Coverage` and `Evidence Gaps`. Coverage measures whether basic listing fields are present (title, company, location, date, description, salary); it is a completeness indicator, **not proof that the vacancy is genuine or still open**.
+
 The score is deterministic and independent of Job Memory. There is intentionally no Novelty, Seen-before, Possible-repost, or history-based score penalty.
 
 ## Job Memory
