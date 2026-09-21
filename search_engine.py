@@ -133,8 +133,12 @@ def _discover_with_searxng(search_term: str, location: str, results_wanted: int)
     frames = []
     errors = []
     attempts = 0
+    # Keep discovery bounded across all query variants. Previously each of the
+    # three variants could return ``results_wanted`` rows, multiplying the
+    # requested discovery volume by up to 3x before downstream deduplication.
+    per_query_limit = max(1, (int(results_wanted) + min(len(queries), 3) - 1) // min(len(queries), 3))
     for query in queries[:3]:
-        outcome = search_searxng(endpoint, query, max_results=results_wanted)
+        outcome = search_searxng(endpoint, query, max_results=per_query_limit)
         attempts += 1
         if outcome.error:
             errors.append(outcome.error)
