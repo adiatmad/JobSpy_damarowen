@@ -9,7 +9,7 @@ from intelligence import score_jobs
 from pipeline import categorize_work_type, deduplicate_jobs, job_fingerprint, process_job_data, validate_jobs
 from search_engine import search_sources
 from storage import ALLOWED_STATUSES, JobStore
-from utils import build_google_search_term, glassdoor_supports_country, inject_custom_css, render_dua_cards
+from utils import build_google_career_search_term, build_google_search_term, glassdoor_supports_country, inject_custom_css, render_dua_cards
 
 st.set_page_config(page_title="Teman Cari Kerja", page_icon="🔎", layout="wide", initial_sidebar_state="collapsed")
 inject_custom_css()
@@ -58,15 +58,21 @@ def render_search_settings():
 
         proxy = st.text_input("Proxy opsional", placeholder="http://user:pass@host:port")
         google_enabled = st.checkbox("✨ Buat query Google Jobs manual", value=False)
+        career_google_enabled = st.checkbox("🔎 Cari halaman karier langsung di Google", value=False)
+        career_google_remote = False
         exclude_age, custom_exclude = False, ""
         if google_enabled:
             exclude_age = st.checkbox("Hilangkan kata usia", value=False)
             custom_exclude = st.text_input("Kata kunci yang dikecualikan")
 
+        if career_google_enabled:
+            career_google_remote = st.checkbox("Tambahkan filter remote", value=False)
+
         return {
             "search_term": search_term, "location": location, "country_indeed": country_indeed,
             "results_wanted": results_wanted, "hours_old": hours_old, "sites": sites,
-            "proxy": proxy, "google_enabled": google_enabled, "exclude_age": exclude_age,
+            "proxy": proxy, "google_enabled": google_enabled, "career_google_enabled": career_google_enabled,
+            "career_google_remote": career_google_remote, "exclude_age": exclude_age,
             "custom_exclude": custom_exclude, "include_unknown_dates": include_unknown_dates,
         }
 
@@ -201,6 +207,13 @@ with tab_search:
             st.code(query, language="text")
             encoded_q = urllib.parse.quote(query)
             st.markdown(f"[🔗 Buka Google Jobs](https://www.google.com/search?q={encoded_q}&ibp=htl;jobs)")
+
+        if settings["career_google_enabled"]:
+            career_query = build_google_career_search_term(search_term=settings["search_term"], location=settings["location"], remote=settings["career_google_remote"])
+            st.markdown("**🔎 Query Google — halaman karier langsung**")
+            st.code(career_query, language="text")
+            career_encoded_q = urllib.parse.quote(career_query)
+            st.markdown(f"[🔗 Buka pencarian Google](https://www.google.com/search?q={career_encoded_q})")
 
 with tab_guide:
     render_search_guide()

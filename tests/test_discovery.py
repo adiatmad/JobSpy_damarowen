@@ -187,3 +187,21 @@ def test_search_sources_uses_scrapling_before_crawl4ai(monkeypatch):
     )
     assert result.jobs.iloc[0]["description"] == "# Full job page"
     assert result.jobs.iloc[0]["discovery_method"] == "searxng+scrapling"
+
+
+def test_build_google_career_search_term():
+    from utils import build_google_career_search_term
+
+    query = build_google_career_search_term("GIS Analyst", "Surabaya")
+    assert '"GIS Analyst"' in query
+    assert '"Surabaya"' in query
+    assert "inurl:careers" in query
+    assert "inurl:jobs" in query
+    assert 'intitle:"we\'re hiring"' in query
+    assert 'intitle:"join our team"' in query
+    assert "remote" not in query
+
+    remote_query = build_google_career_search_term("GIS Analyst", "Remote worldwide", remote=True)
+    assert "remote" in remote_query
+    assert "work from home" in remote_query
+    assert "distributed" in remote_query

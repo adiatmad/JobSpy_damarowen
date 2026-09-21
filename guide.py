@@ -43,18 +43,21 @@ def render_search_guide() -> None:
 
     st.divider()
     st.subheader("Bagian 2: Menembus Hidden Job Market")
-    with st.expander("🔎 Web discovery dengan SearXNG"):
+    with st.expander("🔎 Cari halaman karier langsung lewat Google", expanded=True):
         st.markdown(
             """
-            Jika `SEARXNG_URL` dikonfigurasi, JobSpy menambahkan SearXNG sebagai **discovery layer** di samping source adapter utama.
+            Tidak perlu memahami SearXNG atau tool teknis lain untuk memakai fitur ini.
 
-            Query discovery diarahkan ke halaman karier dengan pola seperti:
-            - `"Nama Posisi" "Lokasi"`
-            - `inurl:careers` / `inurl:jobs`
-            - `intitle:"we're hiring"` / `intitle:"join our team"`
-            - Untuk pencarian remote, istilah `remote`, `work from home`, dan `distributed` ikut digunakan.
+            Teman Cari Kerja bisa membuat **satu query Google tambahan** untuk mencari halaman karier perusahaan yang mungkin tidak muncul di portal pekerjaan.
 
-            **Batas penting:** hasil SearXNG adalah kandidat untuk diperiksa, bukan otomatis lowongan terverifikasi. Tanggal tidak diketahui tetap tunduk pada aturan freshness JobSpy.
+            Polanya otomatis mencari:
+            - posisi yang kamu masukkan
+            - lokasi yang kamu masukkan
+            - halaman **careers / jobs / join-us**
+            - frasa hiring seperti **we're hiring / join our team**
+            - opsional: **remote / work from home / distributed**
+
+            Hasil Google ini adalah **petunjuk untuk diperiksa**, bukan jaminan bahwa lowongannya masih aktif. Buka halaman aslinya dan cek tanggal, deskripsi, perusahaan, dan cara melamar.
             """
         )
 
