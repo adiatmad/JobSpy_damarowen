@@ -6,6 +6,7 @@ import streamlit as st
 
 from guide import render_search_guide
 from intelligence import score_jobs
+from opportunity import build_google_research_links, build_research_brief
 from pipeline import categorize_work_type, deduplicate_jobs, job_fingerprint, process_job_data, validate_jobs
 from search_engine import search_sources
 from storage import ALLOWED_STATUSES, JobStore
@@ -198,6 +199,34 @@ with tab_search:
         stamp = datetime.now().strftime("%Y-%b-%d_%H%M")
         keyword = settings["search_term"].strip().replace(" ", "_") or "SemuaPosisi"
         st.download_button("📥 Download tracker CSV", csv, f"Tracker_{keyword}_{stamp}.csv", "text/csv", use_container_width=True)
+
+        with st.expander("🎯 Research Pack — telusuri satu lowongan", expanded=False):
+            st.caption("Terinspirasi workflow evidence-first: pisahkan fakta listing dari pertanyaan riset. Tidak memakai LLM dan tidak melakukan outreach otomatis.")
+            if jobs.empty:
+                st.info("Tidak ada hasil yang lolos filter saat ini.")
+            else:
+                research_options = {}
+                for idx, row in jobs.iterrows():
+                    label = f"{row.get('title', 'Unknown role')} — {row.get('company', 'Unknown company')}"
+                    research_options[label] = idx
+                selected_label = st.selectbox("Pilih lowongan", list(research_options))
+                selected_row = jobs.loc[research_options[selected_label]].to_dict()
+                brief = build_research_brief(selected_row, settings["search_term"], settings["location"])
+                st.markdown(brief)
+                links = build_google_research_links(selected_row)
+                if links:
+                    st.markdown("**Query riset manual:**")
+                    for query, url in links:
+                        st.markdown(f"- [{query}]({url})")
+                research_stamp = datetime.now().strftime("%Y-%b-%d_%H%M")
+                safe_title = "".join(ch if ch.isalnum() else "_" for ch in str(selected_row.get("title", "job"))).strip("_")[:60] or "job"
+                st.download_button(
+                    "📥 Download Research Pack (.md)",
+                    brief.encode("utf-8"),
+                    f"ResearchPack_{safe_title}_{research_stamp}.md",
+                    "text/markdown",
+                    use_container_width=True,
+                )
 
         if settings["google_enabled"]:
             query = build_google_search_term(
