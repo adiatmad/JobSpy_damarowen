@@ -1,0 +1,12 @@
+# Gemini CLI local-only noise and secrets
+.gemini/.env
+.gemini/*.log
+.gemini/tmp/
+.gemini/cache/
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+data/*.sqlite3
