@@ -26,6 +26,8 @@ Deterministic evidence-based ranking
 Nafkah financial context
     ↓
 SQLite Job Memory
+    ↓
+Optional Research Pack (evidence + manual research queries)
 ```
 
 ### Main modules
@@ -36,10 +38,12 @@ SQLite Job Memory
 - `discovery.py` — optional SearXNG discovery, Scrapling enrichment, and Crawl4AI browser fallback
 - `pipeline.py` — validation, freshness, URL normalization, deduplication and Nafkah enrichment
 - `intelligence.py` — deterministic, history-independent job ranking
+- `opportunity.py` — deterministic evidence-first Research Pack generation and research-query helpers
 - `storage.py` — SQLite persistence for jobs, sighting history, application status, and source/search history
-- `guide.py` — restored search strategy guide
+- `guide.py` — restored search strategy guide and evidence-first research workflow
 - `tests/` — automated regression tests
-- `specs/001-job-intelligence-foundation/` — living product spec, implementation plan, and task state
+- `specs/001-job-intelligence-foundation/` — foundation spec, plan, and task state
+- `specs/002-high-leverage-research-pack/` — Research Pack spec, plan, and task state
 
 ## Runtime
 
@@ -97,6 +101,12 @@ SQLite stores:
 
 Memory is for persistence and tracking; it does not silently alter the ranking of a job.
 
+## Evidence-first Research Pack
+
+The Research Pack applies the useful part of the high-leverage job-hunt workflow without turning Teman Cari Kerja into an AI career platform. Select one result and the app generates a Markdown pack containing the listing evidence, evidence gaps, verification questions, and deterministic manual research queries.
+
+The feature deliberately does **not** infer company strategy, hiring intent, revenue impact, candidate fit, or vacancy validity. It is a structured bridge from **finding a listing → collecting evidence → researching the target → deciding what to do**. No LLM, paid service, automatic outreach, or application submission is required.
+
 ## Optional discovery extensions
 
 ### SearXNG
@@ -149,9 +159,7 @@ This repository follows a lightweight Spec Kit-style flow for meaningful changes
 specify → plan → tasks → implement → converge/review
 ```
 
-The current living artifacts are under `specs/001-job-intelligence-foundation/`.
-
-For an existing project, the important discipline is that the spec defines the intended change and its compatibility boundaries; it is not a retroactive description of every line of the existing system.
+The living artifacts are under `specs/`. For an existing project, the important discipline is that each spec defines the intended change and its compatibility boundaries; it is not a retroactive description of every line of the existing system.
 
 ## Running locally
 
@@ -185,6 +193,7 @@ The project does not require PostgreSQL, Redis, Docker, authentication, or a pai
 - paid external services
 - treating every search result as a verified vacancy
 - ranking jobs based on prior sightings or repost guesses
+- automatic claims about company strategy, revenue impact, hiring intent, or candidate fit
 
 ## Design principles
 
@@ -195,6 +204,7 @@ The project does not require PostgreSQL, Redis, Docker, authentication, or a pai
 - **No source-specific scraping logic in the UI.**
 - **Every useful result should be traceable to a source.**
 - **Job Memory persists history but does not silently change ranking.**
+- **Research questions must remain distinct from listing facts.**
 - **Do not build multi-user infrastructure before real usage requires it.**
 - **Do not add features merely because they are technically interesting.**
 
