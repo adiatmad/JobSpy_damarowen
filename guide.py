@@ -97,6 +97,22 @@ def render_search_guide() -> None:
             """
         )
 
+    with st.expander("🎯 Dari lowongan ke riset yang bernilai"):
+        st.markdown(
+            """
+            Jangan berhenti pada **"lowongan ini kelihatan cocok"**. Untuk lowongan yang benar-benar ingin kamu pertimbangkan, gunakan Research Pack di hasil pencarian.
+
+            **Alur evidence-first:**
+            1. **Verifikasi listing** — buka URL asli, cek tanggal, perusahaan, deskripsi, dan jalur lamaran.
+            2. **Kumpulkan bukti perusahaan** — cari halaman karier resmi, produk, pelanggan, berita, dan kebutuhan tim yang dapat diverifikasi.
+            3. **Cari masalah konkret** — pertanyaan yang berguna adalah "kebutuhan bisnis/tim apa yang sedang didukung role ini?", bukan "perusahaan ini bagus atau tidak?".
+            4. **Bandingkan dengan bukti pengalamanmu sendiri** — gunakan proyek atau hasil yang benar-benar pernah kamu kerjakan; jangan mengarang angka atau dampak.
+            5. **Pilih tindakan** — melamar, mencari jalur kontak yang wajar, atau menyimpan hasil untuk ditelusuri kemudian.
+
+            Research Pack sengaja **tidak menyimpulkan** bahwa perusahaan sedang membutuhkan sesuatu, bahwa kamu cocok, atau bahwa lowongan tersebut valid. Ia hanya memisahkan bukti yang sudah ada dari pertanyaan yang masih harus kamu verifikasi.
+            """
+        )
+
     with st.expander("🔎 Strategi pencarian yang disarankan"):
         st.markdown(
             """
@@ -120,6 +136,7 @@ def render_search_guide() -> None:
             - **Financial Signal** — indikator konservatif berdasarkan informasi gaji yang tersedia dan konteks Nafkah.
             - **Source health** — observabilitas per sumber agar hasil kosong tidak otomatis dianggap sebagai tidak ada lowongan.
             - **Job Memory** — histori lowongan dan status lamaran yang disimpan lokal untuk membantu pelacakan.
+            - **Research Pack** — ringkasan bukti listing + query riset yang dibuat secara deterministik; bukan verifikasi otomatis atau AI matching.
             """
         )
 
