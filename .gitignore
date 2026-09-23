@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 venv/
 .env
+.gemini/.env
 .streamlit/secrets.toml
 data/*.sqlite3
 data/*.db
