@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pandas as pd
 
 from intelligence import score_jobs
@@ -121,9 +123,10 @@ def test_job_fingerprint_canonicalizes_location_variants():
 
 
 def test_validate_jobs_enforces_freshness_and_excludes_unknown_by_default():
+    today = date.today()
     jobs = pd.DataFrame([
-        {"title": "Fresh", "company": "A", "job_url": "https://x/1", "date_posted": "2026-09-13"},
-        {"title": "Old", "company": "B", "job_url": "https://x/2", "date_posted": "2026-09-01"},
+        {"title": "Fresh", "company": "A", "job_url": "https://x/1", "date_posted": today.isoformat()},
+        {"title": "Old", "company": "B", "job_url": "https://x/2", "date_posted": (today - timedelta(days=10)).isoformat()},
         {"title": "Unknown", "company": "C", "job_url": "https://x/3", "date_posted": None},
     ])
     result = validate_jobs(jobs, hours_old=24 * 30)
