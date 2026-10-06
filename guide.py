@@ -140,4 +140,76 @@ def render_search_guide() -> None:
             """
         )
 
+
+    st.divider()
+    st.subheader("💪 Bagian 3: ELI5 — Kenapa Cari Kerja Bisa Terasa 'Sial'")
+    with st.expander("🍀 Kamu tidak harus 'beruntung' sekali. Kamu perlu lebih banyak kesempatan", expanded=True):
+        st.markdown(
+            """
+            ### Bayangkan kamu sedang menangkap hujan
+
+            Mencari kerja itu sedikit seperti menunggu hujan.
+
+            Kamu **tidak bisa memerintah hujan turun**. Kamu juga tidak bisa menjamin perusahaan tertentu akan memilihmu.
+
+            Tapi kamu bisa memilih ukuran embermu.
+
+            Kalau embermu kecil, hujan deras pun mungkin menghasilkan sedikit air. Kalau embermu lebih besar, kamu punya lebih banyak peluang untuk menangkap sesuatu yang berguna.
+
+            Dalam bahasa pencarian kerja, ukuran ember itu adalah **luck surface area**: seberapa banyak kamu bersentuhan dengan peluang.
+
+            Jadi ketika kamu sudah mengirim lamaran dan belum berhasil, itu **tidak otomatis berarti kamu tidak cukup bagus**. Bisa saja peluang yang tepat belum bertemu denganmu.
+
+            ### Jadi apa yang bisa kamu kontrol?
+
+            **1. Ambil lebih banyak tembakan.**  
+            Jangan menghabiskan seluruh energi untuk membuat satu lamaran sempurna. Buat eksperimen kecil, kirim lamaran yang memang masuk akal, coba jalur yang berbeda, lalu lihat apa yang mendapat respons. Lebih banyak percobaan memberi lebih banyak kesempatan untuk menemukan apa yang bekerja.
+
+            **2. Jangan hanya mencari — buat dirimu mudah ditemukan.**  
+            Kerja bagus yang tidak pernah terlihat sulit menghasilkan peluang masuk. Tunjukkan proyek, tulisan, kontribusi, atau hal yang sedang kamu pelajari. Kamu tidak harus menjadi ahli dulu untuk mulai meninggalkan "jejak" yang bisa ditemukan orang lain.
+
+            **3. Kenalan baru itu penting.**  
+            Teman dekatmu biasanya berada di lingkaran informasi yang mirip denganmu. Kenalan yang tidak terlalu dekat justru bisa membawa informasi dari dunia yang belum kamu masuki. Jadi ngobrol dengan orang baru, ikut komunitas, dan menjaga hubungan lama bukan basa-basi kosong; itu memperluas peta peluangmu.
+
+            **4. Pergi ke tempat peluang berkumpul.**  
+            Kalau kamu mencari pekerjaan di bidang tertentu, masuklah ke komunitas, forum, acara, atau ruang online tempat orang-orang di bidang itu berkumpul. Jangan berharap menemukan peluang baru sambil terus berada di lingkungan informasi yang sama.
+
+            **5. Buat taruhan kecil, jangan pertaruhkan hidupmu.**  
+            Coba hal yang punya potensi besar tetapi kerugiannya kecil: proyek sampingan, belajar skill baru, membantu komunitas, atau menghubungi seseorang secara profesional. Hindari keputusan yang kalau gagal akan menghancurkan kondisi keuangan atau hidupmu.
+
+            **6. Sisakan ruang untuk kejutan.**  
+            Kalau seluruh waktu, uang, dan energi sudah habis untuk rutinitas, kamu tidak punya ruang untuk mengambil kesempatan yang muncul tiba-tiba. Tidak semua menit harus dioptimalkan. Sedikit ruang kosong bisa menjadi ruang untuk peluang.
+
+            **7. Belajar supaya kamu bisa mengenali kesempatan.**  
+            Kadang peluang terlihat seperti sesuatu yang biasa saja. Orang yang punya pengetahuan lebih dalam bisa melihat nilai yang tidak terlihat oleh orang lain. Skill baru bukan cuma menambah CV; skill baru juga menambah hal yang bisa kamu kenali dan gabungkan.
+
+            **8. Kegagalan bukan selalu informasi bahwa kamu harus berhenti.**  
+            Ditolak berarti **lamaran itu tidak berhasil**, bukan berarti **kariermu gagal**. Tanyakan: apa yang bisa dipelajari? Apa yang bisa diubah? Siapa yang baru kamu temui? Jalur apa yang sekarang terbuka?
+
+            **9. Mainkan permainan yang panjang.**  
+            Reputasi, skill, hubungan, dan pengalaman menumpuk. Satu lamaran yang gagal hampir tidak berarti apa-apa dalam perjalanan yang panjang. Yang berbahaya justru berhenti bermain terlalu cepat.
+
+            **10. Persistensi adalah strategi, bukan sekadar semangat.**  
+            Kamu tidak perlu menang setiap kali. Kamu perlu tetap cukup lama di dalam permainan agar usaha, pengalaman, hubungan, dan peluang bisa saling menumpuk.
+
+            ### Dan ini bagian yang paling penting
+
+            **Job search bukan mesin yang membayar usaha secara langsung.**
+
+            Kamu bisa melakukan semuanya dengan benar dan tetap ditolak.
+
+            Itu menyebalkan. Dan tidak ada trik yang bisa menghapus kenyataan itu.
+
+            Tetapi penolakan hari ini tidak memberi tahu kita bahwa besok tidak akan ada peluang. Yang bisa kamu lakukan adalah memperbesar kemungkinan bertemu peluang berikutnya: **lebih banyak mencoba, lebih mudah ditemukan, bertemu lebih banyak orang, masuk ke lingkungan yang tepat, belajar, menjaga downside tetap aman, dan terus bermain.**
+
+            Jadi jangan ukur dirimu hanya dari jumlah "diterima".
+
+            Ukur juga apakah **embermu makin besar**.
+
+            🍀 **Kamu tidak perlu mengendalikan keberuntungan. Kamu perlu membangun sistem yang memberinya lebih banyak tempat untuk mendarat.**
+
+            *Catatan: ini adalah kerangka untuk menjaga perspektif dan strategi pencarian kerja, bukan janji bahwa lebih banyak usaha pasti menghasilkan pekerjaan. Hasil tetap dipengaruhi kondisi pasar, timing, kebutuhan perusahaan, dan banyak faktor yang berada di luar kendalimu.*
+            """
+        )
+
     st.info("💡 **Prinsip utama:** alat ini membantu menemukan dan memeriksa informasi lowongan. Validasi akhir tetap perlu melihat deskripsi lengkap, perusahaan, tanggal, sumber, dan link asli.")
