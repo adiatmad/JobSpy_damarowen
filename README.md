@@ -117,10 +117,10 @@ The retrieval layer supports:
 - keyword search across historical job evidence
 - explicit filters such as company, source, work type, and application status
 - exact company-history lookup without fuzzy name guessing
-- \`Showing N of M\` result counts
+- `Showing N of M` result counts
 - inspectable memory metadata and index state
 
-FTS/BM25 relevance is **retrieval relevance only**. It is deliberately separate from \`Match Score\`, which remains deterministic and based only on the current listing/query evidence. Historical retrieval never becomes a hidden ranking penalty or bonus.
+FTS/BM25 relevance is **retrieval relevance only**. It is deliberately separate from `Match Score`, which remains deterministic and based only on the current listing/query evidence. Historical retrieval never becomes a hidden ranking penalty or bonus.
 
 No vector database, embedding model, LLM, or new runtime dependency is required.
 
