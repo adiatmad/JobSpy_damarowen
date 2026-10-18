@@ -8,6 +8,14 @@ from pathlib import Path
 import pandas as pd
 
 DEFAULT_DB_PATH = Path("data") / "jobspy.sqlite3"
+
+
+def _cell_text(value) -> str:
+    """Convert a scalar dataframe cell to text without persisting null markers."""
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "<na>"} else text
 ALLOWED_STATUSES = {"new", "shortlisted", "applied", "interview", "rejected", "withdrawn"}
 
 
@@ -87,10 +95,10 @@ class JobStore:
             if not url:
                 continue
             rows.append((
-                url, str(row.get("job_fingerprint", "")), str(row.get("title", "")),
-                str(row.get("company", "")), str(row.get("location", "")),
-                str(row.get("date_posted", "")), str(row.get("site", row.get("source", ""))),
-                str(row.get("description", "")), str(row.get("Work Type", "")),
+                url, _cell_text(row.get("job_fingerprint", "")), _cell_text(row.get("title", "")),
+                _cell_text(row.get("company", "")), _cell_text(row.get("location", "")),
+                _cell_text(row.get("date_posted", "")), _cell_text(row.get("site", row.get("source", ""))),
+                _cell_text(row.get("description", "")), _cell_text(row.get("Work Type", "")),
             ))
         with self._connect() as connection:
             connection.executemany("""
@@ -98,10 +106,14 @@ class JobStore:
                     (job_url, job_fingerprint, title, company, location, date_posted, source, description, work_type, seen_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(job_url) DO UPDATE SET
-                    job_fingerprint=excluded.job_fingerprint,
-                    title=excluded.title, company=excluded.company, location=excluded.location,
-                    date_posted=excluded.date_posted, source=excluded.source,
-                    description=excluded.description, work_type=excluded.work_type,
+                    job_fingerprint=COALESCE(NULLIF(excluded.job_fingerprint, ''), jobs.job_fingerprint),
+                    title=COALESCE(NULLIF(excluded.title, ''), jobs.title),
+                    company=COALESCE(NULLIF(excluded.company, ''), jobs.company),
+                    location=COALESCE(NULLIF(excluded.location, ''), jobs.location),
+                    date_posted=COALESCE(NULLIF(excluded.date_posted, ''), jobs.date_posted),
+                    source=COALESCE(NULLIF(excluded.source, ''), jobs.source),
+                    description=COALESCE(NULLIF(excluded.description, ''), jobs.description),
+                    work_type=COALESCE(NULLIF(excluded.work_type, ''), jobs.work_type),
                     seen_count=jobs.seen_count + 1,
                     last_seen_at=CURRENT_TIMESTAMP
             """, rows)
