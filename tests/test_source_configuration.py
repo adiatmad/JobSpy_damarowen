@@ -44,6 +44,19 @@ def test_google_jobs_query_without_location_is_still_a_job_query():
     assert kwargs["google_search_term"] == "GIS analyst jobs"
 
 
+def test_google_jobs_does_not_duplicate_jobs_suffix():
+    kwargs = build_kwargs_for_site(
+        site="google",
+        search_term="GIS analyst jobs",
+        location="Indonesia",
+        country_indeed="Indonesia",
+        results_wanted=15,
+        hours_old=72,
+    )
+
+    assert kwargs["google_search_term"] == "GIS analyst jobs near Indonesia"
+
+
 def test_country_filter_is_only_sent_to_indeed_and_glassdoor():
     for site in ("indeed", "glassdoor"):
         kwargs = build_kwargs_for_site(

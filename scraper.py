@@ -78,12 +78,12 @@ def build_kwargs_for_site(
     if site == "google":
         # JobSpy documents google_search_term as Google's filtering input;
         # passing only search_term can produce overly broad or mismatched results.
-        query_parts = [search_term.strip() or "jobs"]
+        query = search_term.strip() or "jobs"
+        if not query.lower().endswith("jobs"):
+            query += " jobs"
         if location and location.strip():
-            query_parts.extend(["jobs near", location.strip()])
-        elif not query_parts[0].lower().endswith("jobs"):
-            query_parts.append("jobs")
-        kwargs["google_search_term"] = " ".join(query_parts)
+            query += f" near {location.strip()}"
+        kwargs["google_search_term"] = query
     if proxy and proxy.strip():
         kwargs["proxies"] = [proxy.strip()]
     return kwargs
