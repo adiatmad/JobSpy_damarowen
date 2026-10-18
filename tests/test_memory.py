@@ -71,12 +71,12 @@ def test_reupsert_refreshes_index_without_duplicate_records(tmp_path):
     store.upsert_jobs(jobs)
 
     updated = jobs.copy()
-    updated.loc[updated.index[0], "title"] = "Senior GIS Analyst"
-    updated.loc[updated.index[0], "description"] = "Senior geospatial analysis with QGIS and Python."
+    updated.loc[updated.index[0], "title"] = "Senior Cartography Specialist"
+    updated.loc[updated.index[0], "description"] = "Senior cartography workflows with QGIS and Python."
     store.upsert_jobs(updated)
 
     old = store.search_memory("GIS Analyst")
-    new = store.search_memory("Senior GIS Analyst")
+    new = store.search_memory("Senior Cartography Specialist")
 
     assert old["total_count"] == 0
     assert new["total_count"] == 1
