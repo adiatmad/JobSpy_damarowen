@@ -9,14 +9,17 @@ from intelligence import score_jobs
 from opportunity import build_google_research_links, build_research_brief
 from pipeline import categorize_work_type, deduplicate_jobs, job_fingerprint, process_job_data, validate_jobs
 from search_engine import search_sources
+from scraper import SOURCE_HELP, SOURCE_LABELS, SUPPORTED_SITES
 from storage import ALLOWED_STATUSES, JobStore
 from utils import build_google_career_search_term, build_google_search_term, glassdoor_supports_country, inject_custom_css, render_dua_cards
 
 st.set_page_config(page_title="Teman Cari Kerja", page_icon="🔎", layout="wide", initial_sidebar_state="collapsed")
 inject_custom_css()
 
-ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]
-DEFAULT_SITES = ["indeed", "linkedin"]
+# Keep the UI choices aligned with adapters supported by the pinned
+# python-jobspy version. Google Jobs is a scraper source, not only a manual link.
+ALL_SITES = list(SUPPORTED_SITES)
+DEFAULT_SITES = ["indeed", "linkedin", "google"]
 store = JobStore()
 
 if "raw_jobs" not in st.session_state:
@@ -46,16 +49,27 @@ def render_search_settings():
             help="Jika aktif, lowongan tanpa tanggal tetap ditampilkan meski filter usia digunakan. Ini kurang ketat untuk pencarian freshness.",
         )
 
-        st.caption("Sumber:")
+        st.caption("Sumber pencarian — pilih beberapa agar cakupan tidak bergantung pada satu job board.")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
         sites = []
         cols = st.columns(4)
         for i, site in enumerate(ALL_SITES):
-            with cols[i]:
+            with cols[i % len(cols)]:
                 disabled = site == "glassdoor" and not glassdoor_ok
-                checked = st.checkbox(site, value=site in DEFAULT_SITES, disabled=disabled, key=f"site_{site}")
+                checked = st.checkbox(
+                    SOURCE_LABELS[site],
+                    value=site in DEFAULT_SITES,
+                    disabled=disabled,
+                    help=SOURCE_HELP[site],
+                    key=f"site_{site}",
+                )
                 if checked and not disabled:
                     sites.append(site)
+        st.caption(
+            "Cakupan regional berbeda: Naukri berfokus pada India, BDJobs pada Bangladesh, "
+            "dan Bayt pada Timur Tengah/Afrika Utara. Sumber yang gagal atau diblokir akan "
+            "ditampilkan terpisah di Source health; hasil kosong bukan bukti bahwa tidak ada lowongan."
+        )
 
         proxy = st.text_input("Proxy opsional", placeholder="http://user:pass@host:port")
         google_enabled = st.checkbox("✨ Buat query Google Jobs manual", value=False)

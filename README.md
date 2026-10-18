@@ -73,6 +73,21 @@ A failed source is not treated as the same thing as an empty source. Teman Cari 
 
 Actual scraper attempt counts are persisted; a timeout is not silently reported as a successful retry.
 
+## Search source coverage
+
+The source selector uses the adapters available in the pinned python-jobspy 1.1.82 release:
+
+- Indeed and LinkedIn
+- Google Jobs
+- ZipRecruiter and Glassdoor
+- Bayt (Middle East/North Africa), Naukri (India), and BDJobs (Bangladesh)
+
+Indeed, LinkedIn, and Google Jobs are selected by default. The regional boards are opt-in because their geographic coverage is not interchangeable. Glassdoor remains disabled when the selected country is not supported by the installed JobSpy country model.
+
+Google Jobs uses JobSpy's dedicated google_search_term parameter, built from the requested role and location. The separate Google links elsewhere in the UI remain manual discovery helpers; they are not counted as scraper results.
+
+Adding a source does not guarantee availability, completeness, or current vacancies. Blocking, rate limits, regional coverage, and parser changes can affect a run. Check Source health for each source's result count and status, and verify the original listing before acting. No scraper can guarantee exhaustive coverage of the web.
+
 ## Freshness and validity boundaries
 
 When a freshness window is requested, listings with a known posting date outside that window are removed. Listings with unknown dates are excluded by default because the application must not pretend that an unverified date is current.
