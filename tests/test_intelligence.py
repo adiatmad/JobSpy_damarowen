@@ -121,13 +121,16 @@ def test_job_fingerprint_canonicalizes_location_variants():
 
 
 def test_validate_jobs_enforces_freshness_and_excludes_unknown_by_default():
+    today = pd.Timestamp.now(tz="UTC").normalize()
+    fresh_date = (today - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    old_date = (today - pd.Timedelta(days=60)).strftime("%Y-%m-%d")
     jobs = pd.DataFrame([
-        {"title": "Fresh", "company": "A", "job_url": "https://x/1", "date_posted": "2026-09-13"},
-        {"title": "Old", "company": "B", "job_url": "https://x/2", "date_posted": "2026-09-01"},
+        {"title": "Fresh", "company": "A", "job_url": "https://x/1", "date_posted": fresh_date},
+        {"title": "Old", "company": "B", "job_url": "https://x/2", "date_posted": old_date},
         {"title": "Unknown", "company": "C", "job_url": "https://x/3", "date_posted": None},
     ])
     result = validate_jobs(jobs, hours_old=24 * 30)
-    assert set(result["title"]) == {"Fresh", "Old"}
+    assert set(result["title"]) == {"Fresh"}
     assert "Unknown" not in set(result["title"])
 
 
