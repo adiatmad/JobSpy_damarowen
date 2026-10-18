@@ -4,6 +4,7 @@
 - [x] Define the supported source inventory and UI coverage guidance.
 - [x] Add Google Jobs to the default selected scraper sources and build its dedicated query.
 - [x] Document source and regional limitations.
-- [ ] Add and run automated regression tests.
-- [ ] Review CI output and final diff.
-- [ ] Keep PR separate and unmerged pending verification.
+- [x] Add and run automated regression tests (GitHub Actions: 49 passed in 1.37s).
+- [x] Review the final changed-file diff; no runtime dependencies or unrelated modules added.
+- [ ] Perform a live Streamlit UI smoke test and real-source search; not claimed in this PR.
+- [x] Keep PR separate and unmerged pending live UI/source verification.
