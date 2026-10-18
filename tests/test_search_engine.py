@@ -93,7 +93,7 @@ def test_job_store_sparse_reingest_preserves_richer_fields_and_status(tmp_path):
     assert row["location"] == "Jakarta"
     assert row["date_posted"] == "2026-10-17"
     assert row["description"] == "A detailed description"
-    assert row["Work Type"] == "Remote"
+    assert row["work_type"] == "Remote"
     assert row["source"] == "linkedin"
     assert row["application_status"] == "shortlisted"
     assert row["seen_count"] == 2
