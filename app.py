@@ -258,6 +258,99 @@ with tab_history:
         metrics[1].metric("Shortlisted", int((history.application_status == "shortlisted").sum()))
         metrics[2].metric("Applied", int((history.application_status == "applied").sum()))
         metrics[3].metric("Interview", int((history.application_status == "interview").sum()))
+
+        st.subheader("🔎 Search Job Memory")
+        st.caption("Retrieval searches historical evidence lexically. It does not change Match Score or prove that a vacancy is active.")
+        memory_mode = st.radio(
+            "Mode",
+            ["Keyword retrieval", "Company history"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if memory_mode == "Keyword retrieval":
+            memory_query = st.text_input(
+                "Cari role, skill, company, lokasi, atau deskripsi",
+                placeholder="contoh: GIS Python remote",
+                key="memory_query",
+            )
+            filter_cols = st.columns(3)
+            with filter_cols[0]:
+                memory_company = st.selectbox(
+                    "Company (exact)",
+                    ["Semua"] + sorted(history["company"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()),
+                    key="memory_company",
+                )
+            with filter_cols[1]:
+                memory_source = st.selectbox(
+                    "Source",
+                    ["Semua"] + sorted(history["source"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()),
+                    key="memory_source",
+                )
+            with filter_cols[2]:
+                memory_status = st.selectbox(
+                    "Status",
+                    ["Semua"] + sorted(history["application_status"].dropna().astype(str).unique().tolist()),
+                    key="memory_status",
+                )
+
+            if memory_query.strip():
+                memory_result = store.search_memory(
+                    memory_query,
+                    limit=20,
+                    company=None if memory_company == "Semua" else memory_company,
+                    source=None if memory_source == "Semua" else memory_source,
+                    application_status=None if memory_status == "Semua" else memory_status,
+                )
+                st.caption(
+                    f"Showing {memory_result['shown_count']} of {memory_result['total_count']} matching records"
+                )
+                memory_df = memory_result["results"]
+                if memory_df.empty:
+                    st.info("Tidak ada record yang cocok dengan query dan filter.")
+                else:
+                    memory_cols = [
+                        "retrieval_rank", "title", "company", "location", "source",
+                        "application_status", "seen_count", "last_seen_at", "job_url",
+                    ]
+                    st.dataframe(
+                        memory_df[[c for c in memory_cols if c in memory_df.columns]],
+                        column_config={
+                            "retrieval_rank": st.column_config.NumberColumn("Retrieval rank"),
+                            "job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            company_options = sorted(
+                history["company"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()
+            )
+            if not company_options:
+                st.info("Belum ada company yang tersimpan.")
+            else:
+                selected_company = st.selectbox("Pilih company (exact match)", company_options, key="memory_history_company")
+                company_result = store.get_company_history(selected_company, limit=50)
+                st.caption(
+                    f"Showing {company_result['shown_count']} of {company_result['total_count']} records for "
+                    f"exact company match: {selected_company}"
+                )
+                company_df = company_result["results"]
+                company_cols = [
+                    "title", "location", "source", "date_posted", "application_status",
+                    "seen_count", "first_seen_at", "last_seen_at", "job_url",
+                ]
+                st.dataframe(
+                    company_df[[c for c in company_cols if c in company_df.columns]],
+                    column_config={"job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗")},
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        memory_meta = store.describe_memory()
+        st.caption(
+            f"Memory: {memory_meta['records']} records · {memory_meta['indexed_records']} indexed · "
+            f"fields: {', '.join(memory_meta['searchable_fields'])}"
+        )
         history_cols = [
             "application_status", "seen_count", "title", "company", "location", "source",
             "first_seen_at", "last_seen_at", "job_url",
