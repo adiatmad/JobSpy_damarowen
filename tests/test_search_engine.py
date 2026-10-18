@@ -54,3 +54,47 @@ def test_job_store_round_trip_and_seen_count(tmp_path):
 
     store.update_application_status("https://example.com/1", "shortlisted")
     assert store.load_jobs().iloc[0]["application_status"] == "shortlisted"
+
+
+def test_job_store_sparse_reingest_preserves_richer_fields_and_status(tmp_path):
+    from storage import JobStore
+
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    original = pd.DataFrame([{
+        "job_url": "https://example.com/2",
+        "job_fingerprint": "gis analyst|example|jakarta",
+        "title": "GIS Analyst",
+        "company": "Example",
+        "location": "Jakarta",
+        "date_posted": "2026-10-17",
+        "site": "indeed",
+        "description": "A detailed description",
+        "Work Type": "Remote",
+    }])
+    sparse = pd.DataFrame([{
+        "job_url": "https://example.com/2",
+        "job_fingerprint": pd.NA,
+        "title": pd.NA,
+        "company": " ",
+        "location": pd.NA,
+        "date_posted": None,
+        "site": "linkedin",
+        "description": pd.NA,
+        "Work Type": pd.NA,
+    }])
+
+    assert store.upsert_jobs(original) == 1
+    store.update_application_status("https://example.com/2", "shortlisted")
+    assert store.upsert_jobs(sparse) == 1
+
+    row = store.load_jobs().iloc[0]
+    assert row["title"] == "GIS Analyst"
+    assert row["company"] == "Example"
+    assert row["location"] == "Jakarta"
+    assert row["date_posted"] == "2026-10-17"
+    assert row["description"] == "A detailed description"
+    assert row["Work Type"] == "Remote"
+    assert row["source"] == "linkedin"
+    assert row["application_status"] == "shortlisted"
+    assert row["seen_count"] == 2
+    assert row["job_fingerprint"] == "gis analyst|example|jakarta"
