@@ -11,6 +11,39 @@ from jobspy import scrape_jobs
 
 from utils import is_permanent_block
 
+SUPPORTED_SITES = (
+    "indeed",
+    "linkedin",
+    "google",
+    "zip_recruiter",
+    "glassdoor",
+    "bayt",
+    "naukri",
+    "bdjobs",
+)
+
+SOURCE_LABELS = {
+    "indeed": "Indeed",
+    "linkedin": "LinkedIn",
+    "google": "Google Jobs",
+    "zip_recruiter": "ZipRecruiter",
+    "glassdoor": "Glassdoor",
+    "bayt": "Bayt (Middle East)",
+    "naukri": "Naukri (India)",
+    "bdjobs": "BDJobs (Bangladesh)",
+}
+
+SOURCE_HELP = {
+    "indeed": "Broad job board; country coverage depends on the selected Indeed country.",
+    "linkedin": "Broad professional network; availability and blocking can vary.",
+    "google": "Google Jobs discovery through JobSpy. Uses a dedicated query built from your role and location.",
+    "zip_recruiter": "General job board with stronger coverage in the United States.",
+    "glassdoor": "Jobs and company listings; country availability is limited by JobSpy's country support.",
+    "bayt": "Job board with a focus on the Middle East and North Africa.",
+    "naukri": "India-focused job board.",
+    "bdjobs": "Bangladesh-focused job board.",
+}
+
 MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 3
 PER_SITE_TIMEOUT_SECONDS = 60
@@ -42,6 +75,15 @@ def build_kwargs_for_site(
         kwargs["hours_old"] = int(hours_old)
     if search_term and search_term.strip():
         kwargs["search_term"] = search_term.strip()
+    if site == "google":
+        # JobSpy documents google_search_term as Google's filtering input;
+        # passing only search_term can produce overly broad or mismatched results.
+        query = search_term.strip() or "jobs"
+        if not query.lower().endswith("jobs"):
+            query += " jobs"
+        if location and location.strip():
+            query += f" near {location.strip()}"
+        kwargs["google_search_term"] = query
     if proxy and proxy.strip():
         kwargs["proxies"] = [proxy.strip()]
     return kwargs

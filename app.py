@@ -9,14 +9,17 @@ from intelligence import score_jobs
 from opportunity import build_google_research_links, build_research_brief
 from pipeline import categorize_work_type, deduplicate_jobs, job_fingerprint, process_job_data, validate_jobs
 from search_engine import search_sources
+from scraper import SOURCE_HELP, SOURCE_LABELS, SUPPORTED_SITES
 from storage import ALLOWED_STATUSES, JobStore
 from utils import build_google_career_search_term, build_google_search_term, glassdoor_supports_country, inject_custom_css, render_dua_cards
 
 st.set_page_config(page_title="Teman Cari Kerja", page_icon="🔎", layout="wide", initial_sidebar_state="collapsed")
 inject_custom_css()
 
-ALL_SITES = ["indeed", "linkedin", "zip_recruiter", "glassdoor"]
-DEFAULT_SITES = ["indeed", "linkedin"]
+# Keep the UI choices aligned with adapters supported by the pinned
+# python-jobspy version. Google Jobs is a scraper source, not only a manual link.
+ALL_SITES = list(SUPPORTED_SITES)
+DEFAULT_SITES = ["indeed", "linkedin", "google"]
 store = JobStore()
 
 if "raw_jobs" not in st.session_state:
@@ -46,16 +49,27 @@ def render_search_settings():
             help="Jika aktif, lowongan tanpa tanggal tetap ditampilkan meski filter usia digunakan. Ini kurang ketat untuk pencarian freshness.",
         )
 
-        st.caption("Sumber:")
+        st.caption("Sumber pencarian — pilih beberapa agar cakupan tidak bergantung pada satu job board.")
         glassdoor_ok = glassdoor_supports_country(country_indeed)
         sites = []
         cols = st.columns(4)
         for i, site in enumerate(ALL_SITES):
-            with cols[i]:
+            with cols[i % len(cols)]:
                 disabled = site == "glassdoor" and not glassdoor_ok
-                checked = st.checkbox(site, value=site in DEFAULT_SITES, disabled=disabled, key=f"site_{site}")
+                checked = st.checkbox(
+                    SOURCE_LABELS[site],
+                    value=site in DEFAULT_SITES,
+                    disabled=disabled,
+                    help=SOURCE_HELP[site],
+                    key=f"site_{site}",
+                )
                 if checked and not disabled:
                     sites.append(site)
+        st.caption(
+            "Cakupan regional berbeda: Naukri berfokus pada India, BDJobs pada Bangladesh, "
+            "dan Bayt pada Timur Tengah/Afrika Utara. Sumber yang gagal atau diblokir akan "
+            "ditampilkan terpisah di Source health; hasil kosong bukan bukti bahwa tidak ada lowongan."
+        )
 
         proxy = st.text_input("Proxy opsional", placeholder="http://user:pass@host:port")
         google_enabled = st.checkbox("✨ Buat query Google Jobs manual", value=False)
@@ -258,6 +272,99 @@ with tab_history:
         metrics[1].metric("Shortlisted", int((history.application_status == "shortlisted").sum()))
         metrics[2].metric("Applied", int((history.application_status == "applied").sum()))
         metrics[3].metric("Interview", int((history.application_status == "interview").sum()))
+
+        st.subheader("🔎 Search Job Memory")
+        st.caption("Retrieval searches historical evidence lexically. It does not change Match Score or prove that a vacancy is active.")
+        memory_mode = st.radio(
+            "Mode",
+            ["Keyword retrieval", "Company history"],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if memory_mode == "Keyword retrieval":
+            memory_query = st.text_input(
+                "Cari role, skill, company, lokasi, atau deskripsi",
+                placeholder="contoh: GIS Python remote",
+                key="memory_query",
+            )
+            filter_cols = st.columns(3)
+            with filter_cols[0]:
+                memory_company = st.selectbox(
+                    "Company (exact)",
+                    ["Semua"] + sorted(history["company"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()),
+                    key="memory_company",
+                )
+            with filter_cols[1]:
+                memory_source = st.selectbox(
+                    "Source",
+                    ["Semua"] + sorted(history["source"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()),
+                    key="memory_source",
+                )
+            with filter_cols[2]:
+                memory_status = st.selectbox(
+                    "Status",
+                    ["Semua"] + sorted(history["application_status"].dropna().astype(str).unique().tolist()),
+                    key="memory_status",
+                )
+
+            if memory_query.strip():
+                memory_result = store.search_memory(
+                    memory_query,
+                    limit=20,
+                    company=None if memory_company == "Semua" else memory_company,
+                    source=None if memory_source == "Semua" else memory_source,
+                    application_status=None if memory_status == "Semua" else memory_status,
+                )
+                st.caption(
+                    f"Showing {memory_result['shown_count']} of {memory_result['total_count']} matching records"
+                )
+                memory_df = memory_result["results"]
+                if memory_df.empty:
+                    st.info("Tidak ada record yang cocok dengan query dan filter.")
+                else:
+                    memory_cols = [
+                        "retrieval_rank", "title", "company", "location", "source",
+                        "application_status", "seen_count", "last_seen_at", "job_url",
+                    ]
+                    st.dataframe(
+                        memory_df[[c for c in memory_cols if c in memory_df.columns]],
+                        column_config={
+                            "retrieval_rank": st.column_config.NumberColumn("Retrieval rank"),
+                            "job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗"),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            company_options = sorted(
+                history["company"].dropna().astype(str).loc[lambda s: s.str.strip() != ""].unique().tolist()
+            )
+            if not company_options:
+                st.info("Belum ada company yang tersimpan.")
+            else:
+                selected_company = st.selectbox("Pilih company (exact match)", company_options, key="memory_history_company")
+                company_result = store.get_company_history(selected_company, limit=50)
+                st.caption(
+                    f"Showing {company_result['shown_count']} of {company_result['total_count']} records for "
+                    f"exact company match: {selected_company}"
+                )
+                company_df = company_result["results"]
+                company_cols = [
+                    "title", "location", "source", "date_posted", "application_status",
+                    "seen_count", "first_seen_at", "last_seen_at", "job_url",
+                ]
+                st.dataframe(
+                    company_df[[c for c in company_cols if c in company_df.columns]],
+                    column_config={"job_url": st.column_config.LinkColumn("Link", display_text="Buka ↗")},
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        memory_meta = store.describe_memory()
+        st.caption(
+            f"Memory: {memory_meta['records']} records · {memory_meta['indexed_records']} indexed · "
+            f"fields: {', '.join(memory_meta['searchable_fields'])}"
+        )
         history_cols = [
             "application_status", "seen_count", "title", "company", "location", "source",
             "first_seen_at", "last_seen_at", "job_url",

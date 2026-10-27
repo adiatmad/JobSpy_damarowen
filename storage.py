@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
 
 DEFAULT_DB_PATH = Path("data") / "jobspy.sqlite3"
+
+
+def _cell_text(value) -> str:
+    """Convert a scalar dataframe cell to text without persisting null markers."""
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"nan", "none", "<na>"} else text
+
+
 ALLOWED_STATUSES = {"new", "shortlisted", "applied", "interview", "rejected", "withdrawn"}
 
 
@@ -76,6 +87,154 @@ class JobStore:
                     FOREIGN KEY(search_run_id) REFERENCES search_runs(id)
                 )
             """)
+            self._ensure_memory_index(connection)
+
+    @staticmethod
+    def _memory_query(query: str) -> str:
+        """Turn free text into safe FTS5 terms without exposing raw MATCH syntax."""
+        tokens = re.findall(r"[a-zA-Z0-9+#.-]+", str(query or "").lower())
+        unique = list(dict.fromkeys(token for token in tokens if token))
+        return " AND ".join(f'"{token.replace(chr(34), chr(34) + chr(34))}"' for token in unique)
+
+    def _ensure_memory_index(self, connection: sqlite3.Connection) -> None:
+        """Create the lexical memory index and migrate existing jobs into it."""
+        connection.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS job_memory_fts USING fts5(
+                job_url UNINDEXED,
+                title,
+                company,
+                location,
+                source,
+                description,
+                work_type,
+                application_status
+            )
+        """)
+        job_count = int(connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+        index_count = int(connection.execute("SELECT COUNT(*) FROM job_memory_fts").fetchone()[0])
+        if job_count != index_count:
+            self._rebuild_memory_index(connection)
+
+    def _rebuild_memory_index(self, connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM job_memory_fts")
+        connection.execute("""
+            INSERT INTO job_memory_fts
+                (job_url, title, company, location, source, description, work_type, application_status)
+            SELECT job_url, COALESCE(title, ''), COALESCE(company, ''), COALESCE(location, ''),
+                   COALESCE(source, ''), COALESCE(description, ''), COALESCE(work_type, ''),
+                   COALESCE(application_status, 'new')
+            FROM jobs
+        """)
+
+    def rebuild_memory_index(self) -> None:
+        """Rebuild the FTS index from the canonical jobs table."""
+        with self._connect() as connection:
+            self._rebuild_memory_index(connection)
+
+    def describe_memory(self) -> dict[str, object]:
+        """Return inspectable metadata about the local memory index."""
+        with self._connect() as connection:
+            count = int(connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+            indexed = int(connection.execute("SELECT COUNT(*) FROM job_memory_fts").fetchone()[0])
+            date_range = connection.execute(
+                "SELECT MIN(first_seen_at), MAX(last_seen_at) FROM jobs"
+            ).fetchone()
+        return {
+            "records": count,
+            "indexed_records": indexed,
+            "index_in_sync": count == indexed,
+            "first_seen": date_range[0],
+            "last_seen": date_range[1],
+            "searchable_fields": [
+                "title", "company", "location", "source",
+                "description", "work_type", "application_status",
+            ],
+            "identity_field": "job_url",
+        }
+
+    def search_memory(
+        self,
+        query: str,
+        limit: int = 20,
+        offset: int = 0,
+        company: str | None = None,
+        source: str | None = None,
+        work_type: str | None = None,
+        application_status: str | None = None,
+    ) -> dict[str, object]:
+        """Search historical Job Memory with lexical FTS5 relevance and explicit filters."""
+        fts_query = self._memory_query(query)
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+        if not fts_query:
+            return {"query": query, "shown_count": 0, "total_count": 0, "results": pd.DataFrame()}
+
+        where = ["job_memory_fts MATCH ?"]
+        params: list[object] = [fts_query]
+        for column, value in (
+            ("company", company),
+            ("source", source),
+            ("work_type", work_type),
+            ("application_status", application_status),
+        ):
+            if value and str(value).strip():
+                where.append(f"LOWER(j.{column}) = LOWER(?)")
+                params.append(str(value).strip())
+
+        predicate = " AND ".join(where)
+        with self._connect() as connection:
+            total = int(connection.execute(
+                f"""SELECT COUNT(*) FROM job_memory_fts
+                    JOIN jobs AS j ON j.job_url = job_memory_fts.job_url
+                    WHERE {predicate}""",
+                params,
+            ).fetchone()[0])
+            rows = pd.read_sql_query(
+                f"""SELECT j.*, bm25(job_memory_fts) AS retrieval_bm25
+                    FROM job_memory_fts
+                    JOIN jobs AS j ON j.job_url = job_memory_fts.job_url
+                    WHERE {predicate}
+                    ORDER BY retrieval_bm25 ASC, j.last_seen_at DESC
+                    LIMIT ? OFFSET ?""",
+                connection,
+                params=[*params, limit, offset],
+            )
+
+        if not rows.empty:
+            rows["retrieval_rank"] = range(offset + 1, offset + 1 + len(rows))
+        return {
+            "query": query,
+            "shown_count": int(len(rows)),
+            "total_count": total,
+            "results": rows,
+        }
+
+    def get_company_history(self, company: str, limit: int = 50) -> dict[str, object]:
+        """Retrieve one explicitly selected company's history; never fuzzy-match names."""
+        company = str(company or "").strip()
+        limit = max(1, min(int(limit), 100))
+        if not company:
+            return {"company": "", "shown_count": 0, "total_count": 0, "results": pd.DataFrame()}
+
+        with self._connect() as connection:
+            total = int(connection.execute(
+                "SELECT COUNT(*) FROM jobs WHERE LOWER(company) = LOWER(?)", (company,)
+            ).fetchone()[0])
+            rows = pd.read_sql_query(
+                """SELECT * FROM jobs
+                   WHERE LOWER(company) = LOWER(?)
+                   ORDER BY last_seen_at DESC
+                   LIMIT ?""",
+                connection,
+                params=(company, limit),
+            )
+        return {
+            "company": company,
+            "shown_count": int(len(rows)),
+            "total_count": total,
+            "results": rows,
+        }
+
 
     def upsert_jobs(self, jobs: pd.DataFrame) -> int:
         """Insert jobs or refresh their historical sighting count by URL."""
@@ -87,10 +246,10 @@ class JobStore:
             if not url:
                 continue
             rows.append((
-                url, str(row.get("job_fingerprint", "")), str(row.get("title", "")),
-                str(row.get("company", "")), str(row.get("location", "")),
-                str(row.get("date_posted", "")), str(row.get("site", row.get("source", ""))),
-                str(row.get("description", "")), str(row.get("Work Type", "")),
+                url, _cell_text(row.get("job_fingerprint", "")), _cell_text(row.get("title", "")),
+                _cell_text(row.get("company", "")), _cell_text(row.get("location", "")),
+                _cell_text(row.get("date_posted", "")), _cell_text(row.get("site", row.get("source", ""))),
+                _cell_text(row.get("description", "")), _cell_text(row.get("Work Type", "")),
             ))
         with self._connect() as connection:
             connection.executemany("""
@@ -98,13 +257,28 @@ class JobStore:
                     (job_url, job_fingerprint, title, company, location, date_posted, source, description, work_type, seen_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(job_url) DO UPDATE SET
-                    job_fingerprint=excluded.job_fingerprint,
-                    title=excluded.title, company=excluded.company, location=excluded.location,
-                    date_posted=excluded.date_posted, source=excluded.source,
-                    description=excluded.description, work_type=excluded.work_type,
+                    job_fingerprint=COALESCE(NULLIF(excluded.job_fingerprint, ''), jobs.job_fingerprint),
+                    title=COALESCE(NULLIF(excluded.title, ''), jobs.title),
+                    company=COALESCE(NULLIF(excluded.company, ''), jobs.company),
+                    location=COALESCE(NULLIF(excluded.location, ''), jobs.location),
+                    date_posted=COALESCE(NULLIF(excluded.date_posted, ''), jobs.date_posted),
+                    source=COALESCE(NULLIF(excluded.source, ''), jobs.source),
+                    description=COALESCE(NULLIF(excluded.description, ''), jobs.description),
+                    work_type=COALESCE(NULLIF(excluded.work_type, ''), jobs.work_type),
                     seen_count=jobs.seen_count + 1,
                     last_seen_at=CURRENT_TIMESTAMP
             """, rows)
+            for row in rows:
+                connection.execute("DELETE FROM job_memory_fts WHERE job_url=?", (row[0],))
+                connection.execute(
+                    """INSERT INTO job_memory_fts
+                       (job_url, title, company, location, source, description, work_type, application_status)
+                       SELECT job_url, COALESCE(title, ''), COALESCE(company, ''), COALESCE(location, ''),
+                              COALESCE(source, ''), COALESCE(description, ''), COALESCE(work_type, ''),
+                              COALESCE(application_status, 'new')
+                       FROM jobs WHERE job_url=?""",
+                    (row[0],),
+                )
         return len(rows)
 
     def update_application_status(self, job_url: str, status: str) -> None:
@@ -112,6 +286,10 @@ class JobStore:
             raise ValueError(f"Unsupported application status: {status}")
         with self._connect() as connection:
             connection.execute("UPDATE jobs SET application_status=? WHERE job_url=?", (status, job_url))
+            connection.execute(
+                "UPDATE job_memory_fts SET application_status=? WHERE job_url=?",
+                (status, job_url),
+            )
 
     def get_application_statuses(self, urls: list[str]) -> dict[str, str]:
         if not urls:
@@ -152,3 +330,10 @@ class JobStore:
     def load_jobs(self) -> pd.DataFrame:
         with self._connect() as connection:
             return pd.read_sql_query("SELECT * FROM jobs ORDER BY last_seen_at DESC", connection)
+
+
+    def delete_job(self, job_url: str) -> None:
+        """Delete one canonical job and its retrieval index entry."""
+        with self._connect() as connection:
+            connection.execute("DELETE FROM job_memory_fts WHERE job_url=?", (job_url,))
+            connection.execute("DELETE FROM jobs WHERE job_url=?", (job_url,))

@@ -27,6 +27,12 @@ Nafkah financial context
     ↓
 SQLite Job Memory
     ↓
+SQLite FTS5 Memory Retrieval
+    ├── keyword search + BM25 retrieval relevance
+    ├── explicit filters
+    ├── company history
+    └── shown N of M result contract
+    ↓
 Optional Research Pack (evidence + manual research queries)
 ```
 
@@ -44,6 +50,7 @@ Optional Research Pack (evidence + manual research queries)
 - `tests/` — automated regression tests
 - `specs/001-job-intelligence-foundation/` — foundation spec, plan, and task state
 - `specs/002-high-leverage-research-pack/` — Research Pack spec, plan, and task state
+- `specs/003-local-job-memory-retrieval/` — local FTS5 memory retrieval spec, plan, and task state
 
 ## Runtime
 
@@ -65,6 +72,21 @@ A failed source is not treated as the same thing as an empty source. Teman Cari 
 - `ERROR`
 
 Actual scraper attempt counts are persisted; a timeout is not silently reported as a successful retry.
+
+## Search source coverage
+
+The source selector uses the adapters available in the pinned python-jobspy 1.1.82 release:
+
+- Indeed and LinkedIn
+- Google Jobs
+- ZipRecruiter and Glassdoor
+- Bayt (Middle East/North Africa), Naukri (India), and BDJobs (Bangladesh)
+
+Indeed, LinkedIn, and Google Jobs are selected by default. The regional boards are opt-in because their geographic coverage is not interchangeable. Glassdoor remains disabled when the selected country is not supported by the installed JobSpy country model.
+
+Google Jobs uses JobSpy's dedicated google_search_term parameter, built from the requested role and location. The separate Google links elsewhere in the UI remain manual discovery helpers; they are not counted as scraper results.
+
+Adding a source does not guarantee availability, completeness, or current vacancies. Blocking, rate limits, regional coverage, and parser changes can affect a run. Check Source health for each source's result count and status, and verify the original listing before acting. No scraper can guarantee exhaustive coverage of the web.
 
 ## Freshness and validity boundaries
 
@@ -100,6 +122,22 @@ SQLite stores:
 - search/source history
 
 Memory is for persistence and tracking; it does not silently alter the ranking of a job.
+
+## Local Job Memory Retrieval
+
+Job Memory is both a persistence layer and a local lexical retrieval layer. SQLite FTS5 indexes the stored title, company, location, source, description, work type, and application status fields.
+
+The retrieval layer supports:
+
+- keyword search across historical job evidence
+- explicit filters such as company, source, work type, and application status
+- exact company-history lookup without fuzzy name guessing
+- `Showing N of M` result counts
+- inspectable memory metadata and index state
+
+FTS/BM25 relevance is **retrieval relevance only**. It is deliberately separate from `Match Score`, which remains deterministic and based only on the current listing/query evidence. Historical retrieval never becomes a hidden ranking penalty or bonus.
+
+No vector database, embedding model, LLM, or new runtime dependency is required.
 
 ## Evidence-first Research Pack
 
